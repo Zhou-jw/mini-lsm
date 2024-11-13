@@ -105,9 +105,8 @@ impl Bloom {
             true
         } else {
             let nbits = self.filter.bit_len();
-            let delta = (h >> 17) | (h << 15);
+            let delta = h.rotate_left(15);
             let mut h2 = h;
-
             for _ in 0..self.k {
                 // TODO: bit_pos = h2 % (nbits as u32)
                 let bit_pos = (h2 as usize) % nbits;
