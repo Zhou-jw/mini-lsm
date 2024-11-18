@@ -43,7 +43,13 @@ impl MemTable {
 
     /// Create a new mem-table with WAL
     pub fn create_with_wal(_id: usize, _path: impl AsRef<Path>) -> Result<Self> {
-        unimplemented!()
+        Ok(Self {
+            map: Arc::default(),
+            wal: Some(Wal::create(_path)?),
+            id: _id,
+            approximate_size: Arc::default(),
+        })
+        // unimplemented!()
     }
 
     /// Create a memtable from WAL
