@@ -334,8 +334,13 @@ impl LsmStorageInner {
 
     pub fn try_freeze(&self, estimated_size: usize) -> Result<()> {
         if estimated_size >= self.options.target_sst_size {
+            //when 2 threads try_freeze at the same time, use state_lock to synchronize
             let state_lock = self.state_lock.lock();
-            self.force_freeze_memtable(&state_lock)?;
+            let state_guard = self.state.read();
+            if state_guard.memtable.approximate_size() >= self.options.target_sst_size {
+                drop(state_guard);
+                self.force_freeze_memtable(&state_lock)?;
+            }
         }
         Ok(())
     }
