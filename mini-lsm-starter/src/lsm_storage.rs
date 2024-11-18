@@ -279,13 +279,27 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, _key: &[u8]) -> Result<Option<Bytes>> {
+        //first search in mem_table
         let storage_guard = self.state.read();
         if let Some(bytes) = storage_guard.memtable.get(_key) {
-            return Ok(if bytes.is_empty() {
-                None
-            } else {
-                Some(bytes.clone())
-            });
+            if bytes.is_empty() {
+                return Ok(None);
+            }
+            else {
+                return Ok(Some(bytes));
+            }
+        }
+
+        //then search in immutable mem_table
+        // for imme_table in &storage_guard.imm_memtables {
+        for imme_table in storage_guard.imm_memtables.iter() {
+            if let Some(value) = imme_table.get(_key) {
+                if value.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Ok(Some(value));
+                }
+            }
         }
         Ok(None)
         // unimplemented!()
@@ -376,10 +390,9 @@ impl LsmStorageInner {
             old_memtable = std::mem::replace(&mut snapshot.memtable, new_memtable);
 
             //snapshot.imm_memtables.insert(0, old_memtable.clone()); 多一个clone()是为什么
-            snapshot.imm_memtables.insert(0,old_memtable);
+            snapshot.imm_memtables.insert(0, old_memtable);
 
             *state_guard = Arc::new(snapshot);
-            
         }
         // unimplemented!()
         Ok(())
