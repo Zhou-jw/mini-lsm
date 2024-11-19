@@ -288,7 +288,7 @@ impl LsmStorageInner {
             else {
                 return Ok(Some(bytes));
             }
-        }
+        } 
 
         //then search in immutable mem_table
         // for imme_table in &storage_guard.imm_memtables {
