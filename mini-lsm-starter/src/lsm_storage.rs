@@ -284,11 +284,10 @@ impl LsmStorageInner {
         if let Some(bytes) = storage_guard.memtable.get(_key) {
             if bytes.is_empty() {
                 return Ok(None);
-            }
-            else {
+            } else {
                 return Ok(Some(bytes));
             }
-        } 
+        }
 
         //then search in immutable mem_table
         // for imme_table in &storage_guard.imm_memtables {
