@@ -2,6 +2,16 @@
 
 Starter code for Mini-LSM.
 
+## week1 day0 配置rust
+### 支持cargo doc --open
+
+```
+//安装 xdg-open
+sudo apt-get install -y xdg-utils
+// 安装wslu 
+https://github.com/wslutilities/wslu?tab=readme-ov-file
+```
+
 ## week1 day1
 ### rust智能指针与Rwlock
 `parking_lot::Rwlock` 的`write()`和`read()`会直接返回 `RwlockGuard()`,这几乎可以当作包装的东西来用？
@@ -93,4 +103,9 @@ fn main() {
     // This will cause an error!
     // println!("{:?}", *int_ref);
 }
+```
+
+### 可派生trait
+```
+https://rustwiki.org/zh-CN/book/appendix-03-derivable-traits.html
 ```
