@@ -114,7 +114,16 @@ impl MemTable {
 
     /// Get an iterator over a range of keys.
     pub fn scan(&self, _lower: Bound<&[u8]>, _upper: Bound<&[u8]>) -> MemTableIterator {
-        unimplemented!()
+        // unimplemented!()
+        let (lower, upper) = (map_bound(_lower), map_bound(_upper));
+        let mut mem_iter = MemTableIteratorBuilder {
+            map: self.map.clone(),
+            iter_builder: |map| map.range((lower, upper)),
+            item: (Bytes::new(), Bytes::new()),
+        }
+        .build();
+        let _ = mem_iter.next();
+        mem_iter
     }
 
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
