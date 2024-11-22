@@ -190,7 +190,7 @@ impl StorageIterator for MemTableIterator {
                 .iter
                 .next()
                 .map(|entry| (entry.key().clone(), entry.value().clone()));
-            *field.item = next_item.unwrap();
+            *field.item = next_item.unwrap_or((Bytes::new(), Bytes::new()));
         });
         Ok(())
         // unimplemented!()

@@ -1,7 +1,7 @@
 #![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
 #![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Ok, Result};
 
 use crate::{
     iterators::{merge_iterator::MergeIterator, StorageIterator},
@@ -17,7 +17,9 @@ pub struct LsmIterator {
 
 impl LsmIterator {
     pub(crate) fn new(iter: LsmIteratorInner) -> Result<Self> {
-        Ok(Self { inner: iter })
+        let mut valid_iter = Self { inner: iter };
+        valid_iter.skip_deleted_items()?;
+        Ok(valid_iter)
     }
 }
 
@@ -39,6 +41,16 @@ impl StorageIterator for LsmIterator {
 
     fn next(&mut self) -> Result<()> {
         self.inner.next()?;
+        self.skip_deleted_items()?;
+        Ok(())
+    }
+}
+
+impl LsmIterator {
+    fn skip_deleted_items(&mut self) -> Result<()> {
+        while self.inner.is_valid() && self.inner.value().is_empty() {
+            self.inner.next()?;
+        }
         Ok(())
     }
 }
