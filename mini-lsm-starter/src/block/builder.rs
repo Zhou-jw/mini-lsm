@@ -33,22 +33,21 @@ impl BlockBuilder {
     /// Adds a key-value pair to the block. Returns false when the block is full.
     #[must_use]
     pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
-
         if key.is_empty() {
-            println!("block build add key is empty");
+            println!("block build try to add empty key");
             return false;
         }
         // key_len + value_len + offset_len
-        let add_size = key.len() + value.len() + SIZEOF_U16*3;
-        let cur_size = self.estimate_size();
-        
-        // if empty sapce is not enough
-        if cur_size + add_size > self.block_size {
+        let add_size = key.len() + value.len() + SIZEOF_U16 * 3;
+        let cur_size = self.estimated_size();
+
+        // if empty sapce is not enough //TODO: why allow insert large k-v pairs when self.is_empty()?
+        if cur_size + add_size > self.block_size && !self.is_empty() {
             return false;
         }
 
         self.offsets.push(self.data.len() as u16);
-        self.data.put_u16(key.len() as u16); 
+        self.data.put_u16(key.len() as u16);
         self.data.put(key.into_inner());
         self.data.put_u16(value.len() as u16);
         self.data.put(value);
@@ -74,7 +73,7 @@ impl BlockBuilder {
         }
     }
 
-    fn estimate_size(&self) -> usize {
+    fn estimated_size(&self) -> usize {
         // Extra.size +  offset_section.size + data_section.size
         SIZEOF_U16 + self.offsets.len() * SIZEOF_U16 + self.data.len()
     }
