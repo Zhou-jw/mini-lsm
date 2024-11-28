@@ -9,12 +9,12 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Ok, Result};
+use anyhow::{anyhow, Ok, Result};
 pub use builder::SsTableBuilder;
 use bytes::{Buf, BufMut};
 pub use iterator::SsTableIterator;
 
-use crate::block::{Block, SIZEOF_U16};
+use crate::block::{self, Block, SIZEOF_U16};
 use crate::key::{KeyBytes, KeySlice};
 use crate::lsm_storage::BlockCache;
 
@@ -148,7 +148,7 @@ impl SsTable {
     /// Open SSTable from a file.
     pub fn open(id: usize, block_cache: Option<Arc<BlockCache>>, file: FileObject) -> Result<Self> {
         let len = file.size();
-        let raw_meta_offset = file.read(len - 4, len)?;
+        let raw_meta_offset = file.read(len - 4, 4)?;
         let block_meta_offset = (&raw_meta_offset[..]).get_u32() as u64;
         let raw_block_meta = file.read(block_meta_offset, len - 4 - block_meta_offset)?;
         let block_meta = BlockMeta::decode_block_meta(&raw_block_meta[..]);
@@ -190,7 +190,6 @@ impl SsTable {
 
     /// Read a block from the disk.
     pub fn read_block(&self, block_idx: usize) -> Result<Arc<Block>> {
-
         let offset = self.block_meta[block_idx].offset;
         let offset_end = self
             .block_meta
@@ -205,7 +204,13 @@ impl SsTable {
 
     /// Read a block from disk, with block cache. (Day 4)
     pub fn read_block_cached(&self, block_idx: usize) -> Result<Arc<Block>> {
-        unimplemented!()
+        if let Some(ref cache) = self.block_cache {
+            let block = cache
+                .try_get_with((self.id, block_idx), || self.read_block(block_idx))
+                .map_err(|e| anyhow!("{}", e))?;
+            return Ok(block);
+        }
+        self.read_block(block_idx)
     }
 
     /// Find the block that may contain `key`.
@@ -213,16 +218,18 @@ impl SsTable {
     /// You may also assume the key-value pairs stored in each consecutive block are sorted.
     pub fn find_block_idx(&self, key: KeySlice) -> usize {
         //self.block_meta.partition_point(|meta| meta.first_key.as_key_slice()<=key).saturating_sub(1);
-        let mut final_idx:usize = 0;
+        let mut final_idx: usize = 0;
         for meta in self.block_meta.iter() {
             if key >= meta.first_key.as_key_slice() {
                 final_idx += 1;
-            }
-            else {
-                return final_idx-1;
+            } else {
+                break;
             }
         }
-        final_idx
+        match final_idx {
+            0 => 0,
+            _ => final_idx - 1,
+        }
     }
 
     /// Get number of data blocks.

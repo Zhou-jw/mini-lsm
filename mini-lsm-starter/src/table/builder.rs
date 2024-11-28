@@ -58,7 +58,8 @@ impl SsTableBuilder {
         // create new blockbuilder and swap with self.builder
         self.finish_block();
 
-        //update first_key and last_key
+        //insert kv again and update first_key and last_key
+        assert!(self.builder.add(key, value));
         self.first_key.clear();
         self.first_key.extend(key.into_inner());
         self.last_key.clear();
@@ -100,14 +101,16 @@ impl SsTableBuilder {
         // -------------------------------------------------------------------------------------------
         // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) |
         // -------------------------------------------------------------------------------------------
-        self.finish_block();
+        if !self.builder.is_empty() {
+            self.finish_block();
+        }
 
         let block_meta_offset = self.data.len();
 
         let mut buf = self.data;
         BlockMeta::encode_block_meta(&self.meta, &mut buf);
 
-        buf.put_u32(self.meta.len() as u32);
+        buf.put_u32(block_meta_offset as u32);
 
         let file = FileObject::create(path.as_ref(), buf)?;
 
