@@ -8,7 +8,7 @@ pub struct TwoMergeIterator<A: StorageIterator, B: StorageIterator> {
     a: A,
     b: B,
     // Add fields as need
-    aflag:bool
+    aflag: bool,
 }
 
 impl<
@@ -17,12 +17,7 @@ impl<
     > TwoMergeIterator<A, B>
 {
     pub fn create(a: A, b: B) -> Result<Self> {
-        Ok(
-            Self {
-                a,
-                b,
-            }
-        )
+        Ok(Self { a, b, aflag: true })
     }
 }
 
