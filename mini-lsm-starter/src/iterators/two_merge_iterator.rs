@@ -17,7 +17,29 @@ impl<
     > TwoMergeIterator<A, B>
 {
     pub fn create(a: A, b: B) -> Result<Self> {
-        Ok(Self { a, b, aflag: true })
+        let mut iter = Self { a, b, aflag: true };
+        iter.skip_b()?;
+        iter.aflag = iter.choose_a();
+        Ok(iter)
+    }
+
+    pub fn skip_b(&mut self) -> Result<()> {
+        if self.a.is_valid() {
+            if self.b.is_valid() && self.a.key() == self.b.key() {
+                self.b.next()?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn choose_a(&self) -> bool {
+        if self.a.is_valid() {
+            if self.b.is_valid() && self.b.key() < self.a.key() {
+                return false;
+            }
+            return true;
+        }
+        false
     }
 }
 
@@ -43,17 +65,20 @@ impl<
     }
 
     fn is_valid(&self) -> bool {
-        self.a.is_valid() || self.b.is_valid()
+        match self.aflag {
+            true => self.a.is_valid(),
+            false => self.b.is_valid(),
+        }
     }
 
     fn next(&mut self) -> Result<()> {
-        if self.a.key() <= self.b.key() && self.a.is_valid() {
-            self.aflag = true;
+        if self.aflag {
             self.a.next()?;
-            return Ok(());
+        } else {
+            self.b.next()?;
         }
-        self.aflag = false;
-        self.b.next()?;
+        self.skip_b()?;
+        self.aflag = self.choose_a();
         Ok(())
     }
 }

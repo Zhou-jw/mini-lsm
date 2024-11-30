@@ -42,7 +42,7 @@ impl LsmIterator {
 
     fn inner_next(&mut self) -> Result<()> {
         self.inner.next()?;
-        if !self.is_valid {
+        if !self.inner.is_valid() {
             self.is_valid = false;
             return Ok(());
         }

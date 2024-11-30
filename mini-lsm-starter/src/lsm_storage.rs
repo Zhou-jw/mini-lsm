@@ -320,14 +320,17 @@ impl LsmStorageInner {
 
         // create sst iterators
         let mut merge_sst_iter = MergeIterator::create(sst_iters);
-        while key > merge_sst_iter.key() {
+        while merge_sst_iter.is_valid() && key > merge_sst_iter.key() {
             merge_sst_iter.next()?;
             //skip deleted key
             while merge_sst_iter.is_valid() && merge_sst_iter.value().is_empty() {
                 merge_sst_iter.next()?;
             }
         }
-        if merge_sst_iter.is_valid() && merge_sst_iter.key() == key {
+        if merge_sst_iter.is_valid()
+            && merge_sst_iter.key() == key
+            && !merge_sst_iter.value().is_empty()
+        {
             return Ok(Some(Bytes::copy_from_slice(merge_sst_iter.value())));
         }
         Ok(None)

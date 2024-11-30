@@ -6,7 +6,6 @@ mod builder;
 mod iterator;
 
 use std::fs::File;
-use std::ops::Bound;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -18,7 +17,6 @@ pub use iterator::SsTableIterator;
 use crate::block::{Block, SIZEOF_U16};
 use crate::key::{KeyBytes, KeySlice};
 use crate::lsm_storage::BlockCache;
-use crate::mem_table::map_bound;
 
 use self::bloom::Bloom;
 
