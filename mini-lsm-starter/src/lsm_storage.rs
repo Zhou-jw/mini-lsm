@@ -18,12 +18,12 @@ use crate::compact::{
 use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
-use crate::key::{KeyBytes, KeySlice};
+use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::{map_bound, MemTable};
 use crate::mvcc::LsmMvccInner;
-use crate::table::{FileObject, SsTable, SsTableIterator};
+use crate::table::{SsTable, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -284,8 +284,13 @@ impl LsmStorageInner {
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, _key: &[u8]) -> Result<Option<Bytes>> {
         //first search in mem_table
-        let storage_guard = self.state.read();
-        if let Some(bytes) = storage_guard.memtable.get(_key) {
+        let snapshot;
+        {
+            let state_guard = self.state.read();
+            snapshot = Arc::clone(&state_guard);
+        }
+
+        if let Some(bytes) = snapshot.memtable.get(_key) {
             if bytes.is_empty() {
                 return Ok(None);
             } else {
@@ -295,7 +300,7 @@ impl LsmStorageInner {
 
         //then search in immutable mem_table
         // for imme_table in &storage_guard.imm_memtables {
-        for imme_table in storage_guard.imm_memtables.iter() {
+        for imme_table in snapshot.imm_memtables.iter() {
             if let Some(value) = imme_table.get(_key) {
                 if value.is_empty() {
                     return Ok(None);
@@ -304,8 +309,28 @@ impl LsmStorageInner {
                 }
             }
         }
+
+        let key = KeySlice::from_slice(_key);
+        let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());
+        for sst_idx in snapshot.l0_sstables.iter() {
+            let table = snapshot.sstables[sst_idx].clone();
+            let sst_iter = SsTableIterator::create_and_seek_to_key(table, key)?;
+            sst_iters.push(Box::new(sst_iter));
+        }
+
+        // create sst iterators
+        let mut merge_sst_iter = MergeIterator::create(sst_iters);
+        while key > merge_sst_iter.key() {
+            merge_sst_iter.next()?;
+            //skip deleted key
+            while merge_sst_iter.is_valid() && merge_sst_iter.value().is_empty() {
+                merge_sst_iter.next()?;
+            }
+        }
+        if merge_sst_iter.is_valid() && merge_sst_iter.key() == key {
+            return Ok(Some(Bytes::copy_from_slice(merge_sst_iter.value())));
+        }
         Ok(None)
-        // unimplemented!()
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
@@ -330,7 +355,6 @@ impl LsmStorageInner {
         // if let Ok(()) = storage.memtable.put(_key, _value) {
         //     return Ok(if());
         // }
-        // unimplemented!()
     }
 
     /// Remove a key from the storage by writing an empty value.
@@ -346,7 +370,6 @@ impl LsmStorageInner {
         self.try_freeze(size)?;
 
         Ok(())
-        // unimplemented!()
     }
 
     pub fn try_freeze(&self, estimated_size: usize) -> Result<()> {

@@ -7,7 +7,7 @@ use crate::{
     iterators::{
         merge_iterator::MergeIterator, two_merge_iterator::TwoMergeIterator, StorageIterator,
     },
-    key::{KeyBytes, KeySlice},
+    key::KeySlice,
     mem_table::MemTableIterator,
     table::SsTableIterator,
 };
