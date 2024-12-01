@@ -128,7 +128,10 @@ impl MemTable {
 
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
     pub fn flush(&self, _builder: &mut SsTableBuilder) -> Result<()> {
-        unimplemented!()
+        for entry in self.map.iter() {
+            _builder.add(KeySlice::from_slice(entry.key().as_ref()), entry.value());
+        }
+        Ok(())
     }
 
     pub fn id(&self) -> usize {
@@ -170,17 +173,14 @@ impl StorageIterator for MemTableIterator {
 
     fn value(&self) -> &[u8] {
         &self.borrow_item().1[..]
-        // unimplemented!()
     }
 
     fn key(&self) -> KeySlice {
         let key = &self.borrow_item().0;
         KeySlice::from_slice(key)
-        // unimplemented!()
     }
 
     fn is_valid(&self) -> bool {
-        // unimplemented!()
         !self.borrow_item().0.is_empty()
     }
 
@@ -193,6 +193,5 @@ impl StorageIterator for MemTableIterator {
             *field.item = next_item.unwrap_or((Bytes::new(), Bytes::new()));
         });
         Ok(())
-        // unimplemented!()
     }
 }

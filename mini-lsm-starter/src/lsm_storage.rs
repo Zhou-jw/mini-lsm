@@ -23,7 +23,7 @@ use crate::lsm_iterator::{FusedIterator, LsmIterator};
 use crate::manifest::Manifest;
 use crate::mem_table::{map_bound, MemTable};
 use crate::mvcc::LsmMvccInner;
-use crate::table::{SsTable, SsTableIterator};
+use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -243,6 +243,10 @@ impl LsmStorageInner {
         let path = path.as_ref();
         let state = LsmStorageState::create(&options);
 
+        if !path.exists() {
+            std::fs::create_dir(path)?;
+        }
+
         let compaction_controller = match &options.compaction_options {
             CompactionOptions::Leveled(options) => {
                 CompactionController::Leveled(LeveledCompactionController::new(options.clone()))
@@ -375,19 +379,6 @@ impl LsmStorageInner {
         Ok(())
     }
 
-    pub fn try_freeze(&self, estimated_size: usize) -> Result<()> {
-        if estimated_size >= self.options.target_sst_size {
-            //when 2 threads try_freeze at the same time, use state_lock to synchronize
-            let state_lock = self.state_lock.lock();
-            let state_guard = self.state.read();
-            if state_guard.memtable.approximate_size() >= self.options.target_sst_size {
-                drop(state_guard);
-                self.force_freeze_memtable(&state_lock)?;
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
         path.as_ref().join(format!("{:05}.sst", id))
     }
@@ -408,6 +399,20 @@ impl LsmStorageInner {
         unimplemented!()
     }
 
+    pub fn try_freeze(&self, estimated_size: usize) -> Result<()> {
+        if estimated_size >= self.options.target_sst_size {
+            // when 2 threads try_freeze at the same time, use state_lock to synchronize
+            // won't block a thread when it check the freeze condition
+            let state_lock = self.state_lock.lock();
+            let state_guard = self.state.read();
+            if state_guard.memtable.approximate_size() >= self.options.target_sst_size {
+                drop(state_guard);
+                self.force_freeze_memtable(&state_lock)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Force freeze the current memtable to an immutable memtable
     pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
         let next_id = self.next_sst_id();
@@ -423,13 +428,39 @@ impl LsmStorageInner {
 
             *state_guard = Arc::new(snapshot);
         }
-        // unimplemented!()
         Ok(())
     }
 
     /// Force flush the earliest-created immutable memtable to disk
     pub fn force_flush_next_imm_memtable(&self) -> Result<()> {
-        unimplemented!()
+        let _state_lock = self.state_lock.lock();
+        let imm_table;
+        {
+            let state_guard = self.state.read();
+            imm_table = state_guard
+                .imm_memtables
+                .last()
+                .expect("no imm_table in the state!")
+                .clone();
+        }
+        let mut sst_builder = SsTableBuilder::new(self.options.block_size);
+        imm_table.flush(&mut sst_builder)?;
+        let sst_id = imm_table.id();
+        let sst = Arc::new(sst_builder.build(
+            sst_id,
+            Some(self.block_cache.clone()),
+            self.path_of_sst(sst_id),
+        )?);
+
+        {
+            let mut state_guard = self.state.write();
+            let mut snapshot = state_guard.as_ref().clone();
+            snapshot.imm_memtables.pop();
+            snapshot.l0_sstables.insert(0, sst_id);
+            snapshot.sstables.insert(sst_id, sst);
+            *state_guard = Arc::new(snapshot);
+        }
+        Ok(())
     }
 
     pub fn new_txn(&self) -> Result<()> {
