@@ -25,17 +25,21 @@ pub struct LsmIterator {
 impl LsmIterator {
     pub(crate) fn new(iter: LsmIteratorInner, upper: Bound<Bytes>) -> Result<Self> {
         let mut valid_iter = Self {
+            is_valid: iter.is_valid(), //note that inner_iter may be invalid
             inner: iter,
             end_bound: upper,
-            is_valid: true,
         };
         valid_iter.skip_deleted_items()?;
         Ok(valid_iter)
     }
 
     fn skip_deleted_items(&mut self) -> Result<()> {
-        while self.inner.is_valid() && self.inner.value().is_empty() {
-            self.inner.next()?;
+        // while self.inner.is_valid() && self.inner.value().is_empty() {
+        //     self.inner.next()?;
+        // }
+        // note that even self.inner is valid, self may be invalid, we should call self.inner_next() to ensure self is valid after call next()
+        while self.is_valid() && self.inner.value().is_empty() {
+            self.inner_next()?;
         }
         Ok(())
     }
@@ -64,7 +68,8 @@ impl StorageIterator for LsmIterator {
     type KeyType<'a> = &'a [u8];
 
     fn is_valid(&self) -> bool {
-        self.inner.is_valid()
+        // self.inner.is_valid() denote inner is valid, but self may be invalid because of key to search is out of the iter's key-range
+        self.is_valid
     }
 
     fn key(&self) -> &[u8] {
