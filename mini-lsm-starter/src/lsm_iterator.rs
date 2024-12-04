@@ -81,6 +81,10 @@ impl StorageIterator for LsmIterator {
         self.skip_deleted_items()?;
         Ok(())
     }
+
+    fn num_active_iterators(&self) -> usize {
+        self.inner.num_active_iterators()
+    }
 }
 
 /// A wrapper around existing iterator, will prevent users from calling `next` when the iterator is
@@ -101,7 +105,10 @@ impl<I: StorageIterator> FusedIterator<I> {
 }
 
 impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
-    type KeyType<'a> = I::KeyType<'a> where Self: 'a;
+    type KeyType<'a>
+        = I::KeyType<'a>
+    where
+        Self: 'a;
 
     fn is_valid(&self) -> bool {
         !self.has_errored && self.iter.is_valid()
@@ -137,5 +144,9 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
         }
 
         Ok(())
+    }
+
+    fn num_active_iterators(&self) -> usize {
+        self.iter.num_active_iterators()
     }
 }

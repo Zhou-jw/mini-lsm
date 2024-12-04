@@ -81,4 +81,19 @@ impl<
         self.aflag = self.choose_a();
         Ok(())
     }
+
+    fn num_active_iterators(&self) -> usize {
+        if !self.aflag {
+            if !self.b.is_valid() {
+                return 0;
+            }
+            return self.b.num_active_iterators();
+        }
+
+        if !self.b.is_valid() {
+            return self.a.num_active_iterators();
+        }
+
+        self.a.num_active_iterators() + self.b.num_active_iterators()
+    }
 }

@@ -241,6 +241,47 @@ impl MiniLsm {
     }
 }
 
+pub fn key_within(table: &Arc<SsTable>, key: KeySlice) -> bool {
+    table.first_key().as_key_slice() <= key && key <= table.last_key().as_key_slice()
+}
+
+pub fn range_overlap(
+    user_lower: Bound<&[u8]>,
+    user_upper: Bound<&[u8]>,
+    table: &Arc<SsTable>,
+) -> bool {
+    /*
+               [user_lower,  )
+    */
+    let first_key = table.first_key().raw_ref();
+    let last_key = table.last_key().raw_ref();
+
+    match user_lower {
+        Bound::Included(key) if last_key < key => {
+            return false;
+        }
+        Bound::Excluded(key) if last_key <= key => {
+            return false;
+        }
+        _ => {}
+    }
+
+    /*
+               [,  user_upper]
+    */
+    match user_upper {
+        Bound::Included(key) if key < first_key => {
+            return false;
+        }
+        Bound::Excluded(key) if key <= first_key => {
+            return false;
+        }
+        _ => {}
+    }
+
+    true
+}
+
 impl LsmStorageInner {
     pub(crate) fn next_sst_id(&self) -> usize {
         self.next_sst_id
@@ -324,10 +365,14 @@ impl LsmStorageInner {
             }
         }
 
+        //search in Sstable
         let key = KeySlice::from_slice(_key);
         let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());
         for sst_idx in snapshot.l0_sstables.iter() {
             let table = snapshot.sstables[sst_idx].clone();
+            if !key_within(&table, key) {
+                continue;
+            }
             let sst_iter = SsTableIterator::create_and_seek_to_key(table, key)?;
             sst_iters.push(Box::new(sst_iter));
         }
@@ -502,6 +547,9 @@ impl LsmStorageInner {
         let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());
         for sst_idx in snapshot.l0_sstables.iter() {
             let table = snapshot.sstables[sst_idx].clone();
+            if !range_overlap(_lower, _upper, &table) {
+                continue;
+            }
             let iter = match _lower {
                 Bound::Included(x) => {
                     SsTableIterator::create_and_seek_to_key(table, KeySlice::from_slice(x))?
