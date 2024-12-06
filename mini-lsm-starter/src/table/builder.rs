@@ -1,13 +1,11 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
 use bytes::BufMut;
+use farmhash::fingerprint32;
 
-use super::{BlockMeta, FileObject, SsTable};
+use super::{bloom::Bloom, BlockMeta, FileObject, SsTable};
 use crate::{
     block::BlockBuilder,
     key::{KeySlice, KeyVec},
@@ -22,6 +20,7 @@ pub struct SsTableBuilder {
     data: Vec<u8>,
     pub(crate) meta: Vec<BlockMeta>,
     block_size: usize,
+    key_hashes: Vec<u32>,
 }
 
 impl SsTableBuilder {
@@ -34,6 +33,7 @@ impl SsTableBuilder {
             data: Vec::new(),
             meta: Vec::new(),
             block_size,
+            key_hashes: Vec::new(),
         }
     }
 
@@ -47,6 +47,8 @@ impl SsTableBuilder {
             self.first_key.clear();
             self.first_key.extend(key.into_inner());
         }
+
+        self.key_hashes.push(fingerprint32(key.into_inner()));
 
         // if successfully add(k, v), update lask_key
         if self.builder.add(key, value) {
@@ -96,22 +98,35 @@ impl SsTableBuilder {
         block_cache: Option<Arc<BlockCache>>,
         path: impl AsRef<Path>,
     ) -> Result<SsTable> {
-        // -------------------------------------------------------------------------------------------
-        // |         Block Section         |          Meta Section         |          Extra          |
-        // -------------------------------------------------------------------------------------------
-        // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) |
-        // -------------------------------------------------------------------------------------------
+        //                                 |---meta block offset
+        //                                 v
+        // --------------------------------------------------------------------------------------------------------------------------------------------
+        // |         Block Section         |          Meta Section         |          Extra          |              Bloom Filter Section              |
+        // --------------------------------------------------------------------------------------------------------------------------------------------
+        // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) | bloom filter | k(u8) | bloom block offset(u32) |
+        // --------------------------------------------------------------------------------------------------------------------------------------------
         if !self.builder.is_empty() {
             self.finish_block();
         }
 
+        // encode meta section
         let block_meta_offset = self.data.len();
-
         let mut buf = self.data;
         BlockMeta::encode_block_meta(&self.meta, &mut buf);
-
+        // encode meta block offset
         buf.put_u32(block_meta_offset as u32);
 
+        // build bloom filter
+        let entries = self.key_hashes.len();
+        let bits_per_key = Bloom::bloom_bits_per_key(entries, 0.01);
+        let bloom = Bloom::build_from_key_hashes(self.key_hashes.as_ref(), bits_per_key);
+
+        // encode bloom filter section
+        let meta_bloom_offset = buf.len();
+        bloom.encode(&mut buf); // put_u8 in encode()
+        buf.put_u32(meta_bloom_offset as u32);
+
+        // create file
         let file = FileObject::create(path.as_ref(), buf)?;
 
         Ok(SsTable {
@@ -119,7 +134,7 @@ impl SsTableBuilder {
             id,
             first_key: self.meta.first().unwrap().first_key.clone(),
             last_key: self.meta.last().unwrap().last_key.clone(),
-            bloom: None,
+            bloom: Some(bloom),
             block_cache,
             block_meta: self.meta,
             block_meta_offset,

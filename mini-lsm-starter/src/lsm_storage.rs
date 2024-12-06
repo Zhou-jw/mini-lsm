@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use bytes::Bytes;
+use farmhash::fingerprint32;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 
 use crate::block::Block;
@@ -370,8 +371,15 @@ impl LsmStorageInner {
         let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());
         for sst_idx in snapshot.l0_sstables.iter() {
             let table = snapshot.sstables[sst_idx].clone();
+
             if !key_within(&table, key) {
                 continue;
+            }
+
+            if let Some(ref bloom) = table.bloom {
+                if !bloom.may_contain(fingerprint32(_key)) {
+                    continue;
+                }
             }
             let sst_iter = SsTableIterator::create_and_seek_to_key(table, key)?;
             sst_iters.push(Box::new(sst_iter));

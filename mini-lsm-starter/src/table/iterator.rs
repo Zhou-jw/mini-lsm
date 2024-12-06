@@ -1,6 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
 use std::sync::Arc;
 
 use anyhow::{Ok, Result};
@@ -18,11 +15,11 @@ pub struct SsTableIterator {
 impl SsTableIterator {
     /// Create a new iterator and seek to the first key-value pair in the first data block.
     // self.data
-    // -------------------------------------------------------------------------------------------
-    // |         Block Section         |          Meta Section         |          Extra          |
-    // -------------------------------------------------------------------------------------------
-    // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) |
-    // -------------------------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------------------------------------------------------------------------
+    // |         Block Section         |                        Meta Section                     |                 Bloom filter Section            |
+    // ---------------------------------------------------------------------------------------------------------------------------------------------
+    // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) | bloom filter | k(u8) | bloom filter offset(u32) |
+    // ---------------------------------------------------------------------------------------------------------------------------------------------
 
     // self.meta
     // -------------------------------------------------------------------------------------------
