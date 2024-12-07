@@ -15,8 +15,11 @@ pub use simple_leveled::{
 };
 pub use tiered::{TieredCompactionController, TieredCompactionOptions, TieredCompactionTask};
 
+use crate::block;
+use crate::iterators::merge_iterator::MergeIterator;
+use crate::iterators::StorageIterator;
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
-use crate::table::SsTable;
+use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum CompactionTask {
@@ -109,15 +112,96 @@ pub enum CompactionOptions {
 
 impl LsmStorageInner {
     fn compact(&self, _task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
-        unimplemented!()
+        let snapshot;
+        {
+            let state_guard = self.state.read();
+            snapshot = state_guard.clone();
+        }
+
+        let iter = match _task {
+            CompactionTask::ForceFullCompaction {
+                l0_sstables,
+                l1_sstables,
+            } => {
+                //create merge_sst_iters
+                let mut sst_iters = Vec::with_capacity(l0_sstables.len() + l1_sstables.len());
+                for sst_idx in l0_sstables.iter() {
+                    let table = snapshot.sstables[sst_idx].clone();
+                    let iter = SsTableIterator::create_and_seek_to_first(table)?;
+                    sst_iters.push(Box::new(iter));
+                }
+
+                for sst_idx in l1_sstables.iter() {
+                    let table = snapshot.sstables[sst_idx].clone();
+                    let iter = SsTableIterator::create_and_seek_to_first(table)?;
+                    sst_iters.push(Box::new(iter));
+                }
+
+                MergeIterator::create(sst_iters)
+            }
+            _ => unimplemented!(),
+        };
+
+        // simply retain the latest one. 
+        // If the latest version is a delete marker, we do not need to keep it in the produced SST files. 
+        let target_sst_size = self.options.target_sst_size;
+        let block_size = self.options.block_size;
+        let mut sstables = Vec::new();
+        let mut sst = SsTableBuilder::new(block_size);
+        while iter.is_valid() && !iter.value().is_empty() {
+            if sst.estimated_size() >= target_sst_size {
+                let next_sst_id = self.next_sst_id();
+                let block_cache = self.block_cache.clone();
+                sstables.push(Arc::new(sst.build( next_sst_id, Some(block_cache), self.path_of_sst(next_sst_id))?));
+                sst = SsTableBuilder::new(block_size);
+            }
+            sst.add(iter.key(), iter.value());
+        }
+
+        Ok(sstables)
     }
 
     pub fn force_full_compaction(&self) -> Result<()> {
-        unimplemented!()
+        let mut snapshot;
+        {
+            let state_guard = self.state.write();
+            snapshot = state_guard.as_ref().clone();
+        }
+
+        let l0_ssts = snapshot.l0_sstables.clone();
+        let (_, l1_ssts) = snapshot.levels[0].clone();
+        let task = CompactionTask::ForceFullCompaction {
+            l0_sstables: l0_ssts,
+            l1_sstables: l1_ssts,
+        };
+
+        // try to compact l0 and l1 ssts to l1 ssts
+        let compacted_ssts = self.compact(&task)?;
+
+        // update snapshot
+        snapshot.l0_sstables.clear();
+        let mut level_1: Vec<usize> = Vec::new();
+        level_1.reserve(compacted_ssts.len());
+        for compacted_sst in compacted_ssts {
+            let sst_id = compacted_sst.sst_id();
+            level_1.push(sst_id);
+            snapshot.sstables.insert(sst_id, compacted_sst);
+        }
+        snapshot.levels[0] = (1, level_1);
+
+        // lock and update LsmStorageState
+        {
+            let _state_lock = self.state_lock.lock();
+            let mut state_guard = self.state.write();
+            *state_guard = Arc::new(snapshot);
+        }
+
+        Ok(())
     }
 
     fn trigger_compaction(&self) -> Result<()> {
-        unimplemented!()
+        self.force_full_compaction()?;
+        Ok(())
     }
 
     pub(crate) fn spawn_compaction_thread(
