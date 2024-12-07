@@ -137,7 +137,7 @@ impl<I: StorageIterator> StorageIterator for FusedIterator<I> {
     }
 
     fn next(&mut self) -> Result<()> {
-        if self.has_errored == true {
+        if self.has_errored {
             bail!("the iterator has errors");
         }
 

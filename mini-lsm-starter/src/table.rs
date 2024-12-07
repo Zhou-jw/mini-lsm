@@ -36,13 +36,11 @@ impl BlockMeta {
     /// Encode block meta to a buffer.
     /// You may add extra fields to the buffer,
     /// in order to help keep track of `first_key` when decoding from the same buffer in the future.
-
-    // -------------------------------------------------------------------------------------------
-    // |                                         Meta                                      | ... |
-    // -------------------------------------------------------------------------------------------
-    // | block_offset(u32) | first_key_len(u16) | first_key | last_key_len(u16) | last_key | ... |
-    // -------------------------------------------------------------------------------------------
-
+    /// -------------------------------------------------------------------------------------------
+    /// |                                         Meta                                      | ... |
+    /// -------------------------------------------------------------------------------------------
+    /// | block_offset(u32) | first_key_len(u16) | first_key | last_key_len(u16) | last_key | ... |
+    /// -------------------------------------------------------------------------------------------
     pub fn encode_block_meta(
         block_meta: &[BlockMeta],
         #[allow(clippy::ptr_arg)] // remove this allow after you finish
