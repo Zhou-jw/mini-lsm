@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use clap::builder;
 pub use leveled::{LeveledCompactionController, LeveledCompactionOptions, LeveledCompactionTask};
 use serde::{Deserialize, Serialize};
 pub use simple_leveled::{
@@ -118,7 +119,7 @@ impl LsmStorageInner {
             snapshot = state_guard.clone();
         }
 
-        let iter = match _task {
+        let mut iter = match _task {
             CompactionTask::ForceFullCompaction {
                 l0_sstables,
                 l1_sstables,
@@ -142,20 +143,45 @@ impl LsmStorageInner {
             _ => unimplemented!(),
         };
 
-        // simply retain the latest one. 
-        // If the latest version is a delete marker, we do not need to keep it in the produced SST files. 
+        // simply retain the latest one.
+        // If the latest version is a delete marker, we do not need to keep it in the produced SST files.
         let target_sst_size = self.options.target_sst_size;
         let block_size = self.options.block_size;
         let mut sstables = Vec::new();
-        let mut sst = SsTableBuilder::new(block_size);
-        while iter.is_valid() && !iter.value().is_empty() {
-            if sst.estimated_size() >= target_sst_size {
+        let mut sst_builder = None;
+        while iter.is_valid() {
+            if sst_builder.is_none() {
+                sst_builder = Some(SsTableBuilder::new(block_size));
+            }
+
+            let builder_inner = sst_builder.as_mut().unwrap();
+
+            if !iter.value().is_empty() {
+                builder_inner.add(iter.key(), iter.value());
+            }
+
+            if builder_inner.estimated_size() >= target_sst_size {
                 let next_sst_id = self.next_sst_id();
                 let block_cache = self.block_cache.clone();
-                sstables.push(Arc::new(sst.build( next_sst_id, Some(block_cache), self.path_of_sst(next_sst_id))?));
-                sst = SsTableBuilder::new(block_size);
+                let builder = sst_builder.take().unwrap();
+                sstables.push(Arc::new(builder.build(
+                    next_sst_id,
+                    Some(block_cache),
+                    self.path_of_sst(next_sst_id),
+                )?));
             }
-            sst.add(iter.key(), iter.value());
+
+            iter.next()?;
+        }
+
+        if let Some(builder) = sst_builder {
+            let next_sst_id = self.next_sst_id();
+            let block_cache = self.block_cache.clone();
+            sstables.push(Arc::new(builder.build(
+                next_sst_id,
+                Some(block_cache),
+                self.path_of_sst(next_sst_id),
+            )?));
         }
 
         Ok(sstables)
