@@ -24,10 +24,8 @@ impl<
     }
 
     pub fn skip_b(&mut self) -> Result<()> {
-        if self.a.is_valid() {
-            if self.b.is_valid() && self.a.key() == self.b.key() {
-                self.b.next()?;
-            }
+        if self.a.is_valid() && self.b.is_valid() && self.a.key() == self.b.key() {
+            self.b.next()?;
         }
         Ok(())
     }

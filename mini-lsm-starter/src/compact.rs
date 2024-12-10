@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use clap::builder;
 pub use leveled::{LeveledCompactionController, LeveledCompactionOptions, LeveledCompactionTask};
 use serde::{Deserialize, Serialize};
 pub use simple_leveled::{
@@ -16,8 +15,9 @@ pub use simple_leveled::{
 };
 pub use tiered::{TieredCompactionController, TieredCompactionOptions, TieredCompactionTask};
 
-use crate::block;
+use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
+use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
@@ -132,13 +132,13 @@ impl LsmStorageInner {
                     sst_iters.push(Box::new(iter));
                 }
 
+                let mut l1_ssts = Vec::with_capacity(l1_sstables.len());
                 for sst_idx in l1_sstables.iter() {
-                    let table = snapshot.sstables[sst_idx].clone();
-                    let iter = SsTableIterator::create_and_seek_to_first(table)?;
-                    sst_iters.push(Box::new(iter));
+                    l1_ssts.push(snapshot.sstables[sst_idx].clone());
                 }
+                let sst_concate_iter = SstConcatIterator::create_and_seek_to_first(l1_ssts)?;
 
-                MergeIterator::create(sst_iters)
+                TwoMergeIterator::create(MergeIterator::create(sst_iters), sst_concate_iter)?
             }
             _ => unimplemented!(),
         };
@@ -206,8 +206,7 @@ impl LsmStorageInner {
 
         // update snapshot
         snapshot.l0_sstables.clear();
-        let mut level_1: Vec<usize> = Vec::new();
-        level_1.reserve(compacted_ssts.len());
+        let mut level_1: Vec<usize> = Vec::with_capacity(compacted_ssts.len());
         for compacted_sst in compacted_ssts {
             let sst_id = compacted_sst.sst_id();
             level_1.push(sst_id);

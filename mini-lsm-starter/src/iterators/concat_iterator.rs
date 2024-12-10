@@ -25,7 +25,7 @@ impl SstConcatIterator {
             return Ok(Self {
                 current: None,
                 next_sst_idx: 0,
-                sstables: sstables,
+                sstables,
             });
         }
 
@@ -52,10 +52,10 @@ impl SstConcatIterator {
             iter = Some(SsTableIterator::create_and_seek_to_key(table.clone(), key)?);
             break;
         }
-        let mut sst_iter = Self{
+        let mut sst_iter = Self {
             current: iter,
             next_sst_idx: sst_idx + 1,
-            sstables: sstables,
+            sstables,
         };
         sst_iter.move_until_valid()?;
         Ok(sst_iter)
@@ -66,7 +66,7 @@ impl SstConcatIterator {
             if self.is_valid() {
                 return Ok(());
             }
-            if self.next_sst_idx == self.sstables.len() {
+            if self.next_sst_idx >= self.sstables.len() {
                 self.current = None;
                 break;
             }

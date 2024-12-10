@@ -37,7 +37,7 @@ impl BlockBuilder {
         Self {
             offsets: Vec::new(),
             data: Vec::new(),
-            block_size: block_size, // since self.block_size has the same name , could rewrite just "block_size",
+            block_size, // since self.block_size has the same name , could rewrite just "block_size",
             first_key: KeyVec::new(),
         }
     }
