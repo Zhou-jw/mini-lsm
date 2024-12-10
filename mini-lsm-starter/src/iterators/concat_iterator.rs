@@ -31,10 +31,17 @@ impl SstConcatIterator {
     }
 
     pub fn create_and_seek_to_key(sstables: Vec<Arc<SsTable>>, key: KeySlice) -> Result<Self> {
-        let table = sstables.first().unwrap().clone();
-        let sst_iter = SsTableIterator::create_and_seek_to_key(table, key)?;
+        let sst_idx = 0;
+        let mut sst_iter = None;
+        for table in sstables.iter() {
+            if table.last_key().as_key_slice() < key {
+                continue;
+            }
+            sst_iter = Some(SsTableIterator::create_and_seek_to_key(table.clone(), key)?);
+            break;
+        }
         Ok(Self {
-            current: Some(sst_iter),
+            current: sst_iter,
             next_sst_idx: 1,
             sstables: sstables,
         })
@@ -53,7 +60,10 @@ impl StorageIterator for SstConcatIterator {
     }
 
     fn is_valid(&self) -> bool {
-        self.current.as_ref().unwrap().is_valid()
+        if let Some(sst_iter) = &self.current {
+            return sst_iter.is_valid();
+        }
+        false
     }
 
     fn next(&mut self) -> Result<()> {
