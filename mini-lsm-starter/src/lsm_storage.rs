@@ -16,8 +16,9 @@ use crate::compact::{
     CompactionController, CompactionOptions, LeveledCompactionController, LeveledCompactionOptions,
     SimpleLeveledCompactionController, SimpleLeveledCompactionOptions, TieredCompactionController,
 };
+use crate::iterators::concat_iterator::SstConcatIterator;
 use crate::iterators::merge_iterator::MergeIterator;
-use crate::iterators::two_merge_iterator::TwoMergeIterator;
+use crate::iterators::two_merge_iterator::{self, TwoMergeIterator};
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
@@ -366,8 +367,9 @@ impl LsmStorageInner {
             }
         }
 
-        //search in Sstable
+        //search in l0_Sstable
         let key = KeySlice::from_slice(_key);
+
         let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());
         for sst_idx in snapshot.l0_sstables.iter() {
             let table = snapshot.sstables[sst_idx].clone();
@@ -394,11 +396,26 @@ impl LsmStorageInner {
                 merge_sst_iter.next()?;
             }
         }
-        if merge_sst_iter.is_valid()
-            && merge_sst_iter.key() == key
-            && !merge_sst_iter.value().is_empty()
-        {
-            return Ok(Some(Bytes::copy_from_slice(merge_sst_iter.value())));
+        if merge_sst_iter.is_valid() && merge_sst_iter.key() == key {
+            if !merge_sst_iter.value().is_empty() {
+                return Ok(Some(Bytes::copy_from_slice(merge_sst_iter.value())));
+            } else {
+                return Ok(None);
+            }
+        }
+
+        // search in l1_sstables
+        let (_, l1_ssts_idxes) = snapshot.levels[0].clone();
+        let mut l1_sstables = Vec::with_capacity(l1_ssts_idxes.len());
+        for sst_idx in l1_ssts_idxes.iter() {
+            l1_sstables.push(snapshot.sstables[sst_idx].clone());
+        }
+        if l1_sstables.is_empty() {
+            return Ok(None);
+        }
+        let iter = SstConcatIterator::create_and_seek_to_key(l1_sstables, key)?;
+        if iter.is_valid() && iter.key() == key {
+            return Ok(Some(Bytes::copy_from_slice(iter.value())));
         }
         Ok(None)
     }
@@ -574,10 +591,38 @@ impl LsmStorageInner {
             };
             sst_iters.push(Box::new(iter));
         }
-        let merge_sst_iters = MergeIterator::create(sst_iters);
+        let merge_l0_sst_iters = MergeIterator::create(sst_iters);
 
-        let two_merge_iter = TwoMergeIterator::create(merge_mem_iters, merge_sst_iters)?;
+        let inner_two_merge_iter = TwoMergeIterator::create(merge_mem_iters, merge_l0_sst_iters)?;
 
+        let (_, l1_ssts_idxes) = snapshot.levels[0].clone();
+        let mut l1_sstables = Vec::with_capacity(l1_ssts_idxes.len());
+        let mut l1_sst_iter = Vec::with_capacity(1);
+        for sst_idx in l1_ssts_idxes.iter() {
+            l1_sstables.push(snapshot.sstables[sst_idx].clone());
+        }
+        if !l1_sstables.is_empty() {
+            let iter = match _lower {
+                Bound::Included(x) => {
+                    SstConcatIterator::create_and_seek_to_key(l1_sstables, KeySlice::from_slice(x))?
+                }
+                Bound::Excluded(x) => {
+                    let mut sst_tmp_iter = SstConcatIterator::create_and_seek_to_key(
+                        l1_sstables,
+                        KeySlice::from_slice(x),
+                    )?;
+                    if sst_tmp_iter.is_valid() && sst_tmp_iter.key() == KeySlice::from_slice(x) {
+                        sst_tmp_iter.next()?;
+                    }
+                    sst_tmp_iter
+                }
+                Bound::Unbounded => SstConcatIterator::create_and_seek_to_first(l1_sstables)?,
+            };
+            l1_sst_iter.push(Box::new(iter));
+        }
+        let merge_l1_sst_iters = MergeIterator::create(l1_sst_iter);
+
+        let two_merge_iter = TwoMergeIterator::create(inner_two_merge_iter, merge_l1_sst_iters)?;
         Ok(FusedIterator::new(LsmIterator::new(
             two_merge_iter,
             map_bound(_upper),
