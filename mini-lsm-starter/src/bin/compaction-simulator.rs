@@ -284,10 +284,12 @@ fn main() {
                     );
                     println!("-> {:?}", sst_ids);
                     max_space = max_space.max(storage.file_list.len());
+                    // println!("hash_map = {:?}", storage.file_list);
                     let (snapshot, del) =
                         controller.apply_compaction_result(&storage.snapshot, &task, &sst_ids);
                     storage.snapshot = snapshot;
                     storage.remove(&del);
+                    // println!("after removed, hash_map = {:?}", storage.file_list);
                     println!("--- After Compaction ---");
                     if dump_real_id {
                         storage.dump_real_id(true, false);

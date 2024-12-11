@@ -93,12 +93,12 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
         let cur = self.current.as_mut().unwrap();
         while let Some(mut inner_iter) = self.iters.peek_mut() {
             //cur.1.key is the latest data, when next.1.key==cur.1.key , inner_iter should call inner_iter.next()
-            eprintln!(
-                "cur.1.key is {:?}, cur.1.value is {:?}",
-                cur.1.key(),
-                cur.1.value()
-            );
-            eprintln!("inner_iter.1.key is {:?}", inner_iter.1.key());
+            // eprintln!(
+            //     "cur.1.key is {:?}, cur.1.value is {:?}",
+            //     cur.1.key(),
+            //     cur.1.value()
+            // );
+            // eprintln!("inner_iter.1.key is {:?}", inner_iter.1.key());
             // io::stdout().flush().unwrap();
             if cur.1.key() == inner_iter.1.key() {
                 /*
@@ -125,21 +125,21 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
 
         cur.1.next()?;
 
-        if cur.1.is_valid() {
-            println!(
-                "after call cur.1.next, cur.1.key is {:?}, cur.1.value is {:?}",
-                cur.1.key(),
-                cur.1.value()
-            );
-        }
+        // if cur.1.is_valid() {
+        //     println!(
+        //         "after call cur.1.next, cur.1.key is {:?}, cur.1.value is {:?}",
+        //         cur.1.key(),
+        //         cur.1.value()
+        //     );
+        // }
         if !cur.1.is_valid() {
             if let Some(s) = self.iters.pop() {
                 *cur = s;
-                println!(
-                    "cur is invalid, new cur.1.key is {:?}, cur.1.value is {:?}\n",
-                    cur.1.key(),
-                    cur.1.value()
-                );
+                // println!(
+                //     "cur is invalid, new cur.1.key is {:?}, cur.1.value is {:?}\n",
+                //     cur.1.key(),
+                //     cur.1.value()
+                // );
             }
             return Ok(());
         }
@@ -151,11 +151,11 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
                 std::mem::swap(&mut *inner_iter, cur);
             }
         }
-        println!(
-            "swaped cur , new cur.1.key is {:?}, cur.1.value is {:?}\n",
-            cur.1.key(),
-            cur.1.value()
-        );
+        // println!(
+        //     "swaped cur , new cur.1.key is {:?}, cur.1.value is {:?}\n",
+        //     cur.1.key(),
+        //     cur.1.value()
+        // );
         Ok(())
     }
 

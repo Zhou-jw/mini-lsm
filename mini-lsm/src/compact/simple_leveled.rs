@@ -96,6 +96,7 @@ impl SimpleLeveledCompactionController {
             );
             files_to_remove.extend(&snapshot.levels[upper_level - 1].1);
             snapshot.levels[upper_level - 1].1.clear();
+            println!("files_to_remove = {:?}", files_to_remove);
         } else {
             files_to_remove.extend(&task.upper_level_sst_ids);
             let mut l0_ssts_compacted = task
@@ -103,12 +104,14 @@ impl SimpleLeveledCompactionController {
                 .iter()
                 .copied()
                 .collect::<HashSet<_>>();
+            // println!("before :l0_ssts_compacted = {:?}\n snapshot.l0 = {:?}", l0_ssts_compacted, snapshot.l0_sstables);
             let new_l0_sstables = snapshot
                 .l0_sstables
                 .iter()
                 .copied()
                 .filter(|x| !l0_ssts_compacted.remove(x))
                 .collect::<Vec<_>>();
+            // println!("after: l0_ssts_compacted = {:?}", l0_ssts_compacted);
             assert!(l0_ssts_compacted.is_empty());
             snapshot.l0_sstables = new_l0_sstables;
         }

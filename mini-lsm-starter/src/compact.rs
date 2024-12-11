@@ -132,6 +132,7 @@ impl LsmStorageInner {
                     sst_iters.push(Box::new(iter));
                 }
 
+                //create sst_concate_iter
                 let mut l1_ssts = Vec::with_capacity(l1_sstables.len());
                 for sst_idx in l1_sstables.iter() {
                     l1_ssts.push(snapshot.sstables[sst_idx].clone());
@@ -143,8 +144,8 @@ impl LsmStorageInner {
             _ => unimplemented!(),
         };
 
-        // simply retain the latest one.
-        // If the latest version is a delete marker, we do not need to keep it in the produced SST files.
+        // if lots of the same keys exist, simply retain the latest one.
+        // if the latest version is a delete marker, we do not need to keep it in the produced SST files.
         let target_sst_size = self.options.target_sst_size;
         let block_size = self.options.block_size;
         let mut sstables = Vec::new();
