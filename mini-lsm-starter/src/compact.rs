@@ -138,6 +138,7 @@ impl LsmStorageInner {
                 let next_sst_id = self.next_sst_id();
                 let block_cache = self.block_cache.clone();
                 let builder = sst_builder.take().unwrap();
+                // println!("compact generate sst {:?}", next_sst_id);
                 sstables.push(Arc::new(builder.build(
                     next_sst_id,
                     Some(block_cache),
@@ -150,6 +151,7 @@ impl LsmStorageInner {
 
         if let Some(builder) = sst_builder {
             let next_sst_id = self.next_sst_id();
+            // println!("compact generate sst {:?}", next_sst_id);
             let block_cache = self.block_cache.clone();
             sstables.push(Arc::new(builder.build(
                 next_sst_id,
@@ -194,8 +196,11 @@ impl LsmStorageInner {
             CompactionTask::Simple(simple_task) => {
                 match simple_task.upper_level {
                     None => {
-                        let l0_sstables = &snapshot.l0_sstables;
-                        let l1_sstables = &snapshot.levels.get(0).unwrap().1;
+                        //note that snapshot.l0_sstables may be larger than the snapshot when task was generated
+                        let l0_sstables = simple_task.upper_level_sst_ids.clone();
+                        let l1_sstables = simple_task.lower_level_sst_ids.clone();
+                        // assert_eq!(l0_sstables, snapshot.l0_sstables);
+                        // println!("compact L0={:?} to L1{:?}", l0_sstables, l1_sstables);
                         //create merge_sst_iters
                         let mut sst_iters = Vec::with_capacity(l0_sstables.len());
                         for sst_idx in l0_sstables.iter() {
@@ -219,6 +224,19 @@ impl LsmStorageInner {
                     Some(_) => {
                         let upper_sst_ids = simple_task.upper_level_sst_ids.clone();
                         let lower_sst_ids = simple_task.lower_level_sst_ids.clone();
+                        // println!("== Before compact ==");
+                        // println!("L0 = {:?}", snapshot.l0_sstables);
+                        // for i in snapshot.levels.iter() {
+                        //     println!("L{:?} = {:?}", i.0, i.1);
+                        // }
+
+                        // println!(
+                        //     "compact L{:?}={:?} to L{:?}={:?} \n",
+                        //     simple_task.lower_level - 1,
+                        //     upper_sst_ids,
+                        //     simple_task.lower_level,
+                        //     lower_sst_ids
+                        // );
 
                         let mut upper_ssts = Vec::with_capacity(upper_sst_ids.len());
                         for sst_idx in upper_sst_ids.iter() {

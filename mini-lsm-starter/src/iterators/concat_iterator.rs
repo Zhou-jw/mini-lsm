@@ -66,6 +66,7 @@ impl SstConcatIterator {
             if self.is_valid() {
                 return Ok(());
             }
+
             if self.next_sst_idx >= self.sstables.len() {
                 self.current = None;
                 break;
@@ -99,7 +100,8 @@ impl StorageIterator for SstConcatIterator {
     }
 
     fn next(&mut self) -> Result<()> {
-        self.current.as_mut().unwrap().next()
+        self.current.as_mut().unwrap().next()?;
+        self.move_until_valid()
     }
 
     fn num_active_iterators(&self) -> usize {

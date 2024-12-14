@@ -1,13 +1,8 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    iterators::{
-        concat_iterator::SstConcatIterator, merge_iterator::MergeIterator,
-        two_merge_iterator::TwoMergeIterator,
-    },
-    lsm_storage::LsmStorageState,
-    table::SsTableIterator,
-};
+use crate::lsm_storage::LsmStorageState;
 
 #[derive(Debug, Clone)]
 pub struct SimpleLeveledCompactionOptions {
@@ -65,7 +60,7 @@ impl SimpleLeveledCompactionController {
         for l_cur in 0..self.options.max_levels - 1 {
             let lower_level = l_cur + 2;
             let upper_level = l_cur + 1;
-            if _snapshot.levels[l_cur].1.len() == 0 {
+            if _snapshot.levels[l_cur].1.is_empty() {
                 continue;
             }
             let size_ratio_percent = _snapshot.levels[l_cur + 1].1.len() as f64
@@ -99,23 +94,46 @@ impl SimpleLeveledCompactionController {
     ) -> (LsmStorageState, Vec<usize>) {
         let mut new_state = _snapshot.clone();
         let sst_ids = _output.to_vec();
+        println!("output = {:?}", sst_ids);
 
         match _task.upper_level {
             None => {
-                new_state.l0_sstables.clear();
-                let mut del_sst_ids = _snapshot.l0_sstables.clone();
-                del_sst_ids.extend(_snapshot.levels[0].1.iter());
+                // == Attention! ==
+                // remember that flush and compact are two unique threads
+                // when compact, there may be new sstables flush to l0
+                // so we need to reserve new l0_sstables and remove old l0_sstables
+                let mut del_sst_ids = _task.upper_level_sst_ids.clone();
                 println!("del_l0_sst_ids = {:?}", del_sst_ids);
+                del_sst_ids.extend(_task.lower_level_sst_ids.iter());
+                println!("del_l1_sst_ids = {:?}", _task.lower_level_sst_ids.iter());
+                let mut l0_sstables_compacted = _task
+                    .upper_level_sst_ids
+                    .iter()
+                    .copied()
+                    .collect::<HashSet<_>>();
+                let new_l0_sstables = new_state
+                    .l0_sstables
+                    .iter()
+                    .copied()
+                    .filter(|x| !l0_sstables_compacted.remove(x))
+                    .collect::<Vec<_>>();
+                assert!(l0_sstables_compacted.is_empty());
+                new_state.l0_sstables = new_l0_sstables;
                 new_state.levels[0] = (1, sst_ids.clone());
                 (new_state, del_sst_ids)
             }
             Some(mut upper_l) => {
-                upper_l = upper_l - 1;
+                upper_l -= 1;
                 // println!("_output = {:?}", _output);
                 let lower_l = _task.lower_level - 1;
-                let mut del_sst_ids = new_state.levels[upper_l].1.clone();
-                del_sst_ids.extend(new_state.levels[lower_l].1.iter());
-                println!("del_upper_sst_ids = {:?}", del_sst_ids);
+                let mut del_sst_ids = _task.upper_level_sst_ids.clone();
+                println!("del_l{:?}_sst_ids = {:?}", upper_l + 1, del_sst_ids);
+                del_sst_ids.extend(_task.lower_level_sst_ids.iter());
+                println!(
+                    "del_l{:?}_sst_ids = {:?}",
+                    upper_l + 2,
+                    new_state.levels[lower_l].1
+                );
                 new_state.levels[upper_l] = (new_state.levels[upper_l].0, Vec::new());
                 new_state.levels[lower_l] = (new_state.levels[lower_l].0, sst_ids.clone());
                 (new_state, del_sst_ids)
@@ -123,31 +141,5 @@ impl SimpleLeveledCompactionController {
         }
 
         // unimplemented!()
-    }
-
-    fn trigger_l0_compaction(
-        &self,
-        _snapshot: &mut LsmStorageState,
-        _task: &SimpleLeveledCompactionTask,
-    ) -> TwoMergeIterator<MergeIterator<SsTableIterator>, SstConcatIterator> {
-        let mut new_state = _snapshot.clone();
-        let l0_sstables = &new_state.l0_sstables;
-        let mut sst_iters = Vec::with_capacity(l0_sstables.len());
-        for sst_idx in l0_sstables.iter() {
-            let table = new_state.sstables[sst_idx].clone();
-            let iter = SsTableIterator::create_and_seek_to_first(table).unwrap();
-            sst_iters.push(Box::new(iter));
-        }
-
-        new_state.l0_sstables.clear();
-
-        //create sst_concate_iter
-        let l1_sstables = &new_state.levels[0].1;
-        let mut l1_ssts = Vec::with_capacity(l1_sstables.len());
-        for sst_idx in l1_sstables.iter() {
-            l1_ssts.push(new_state.sstables[sst_idx].clone());
-        }
-        let sst_concate_iter = SstConcatIterator::create_and_seek_to_first(l1_ssts).unwrap();
-        TwoMergeIterator::create(MergeIterator::create(sst_iters), sst_concate_iter).unwrap()
     }
 }
