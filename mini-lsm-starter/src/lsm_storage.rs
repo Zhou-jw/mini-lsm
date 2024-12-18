@@ -1,6 +1,7 @@
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
 
 use std::collections::HashMap;
+use std::fs::File;
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
@@ -22,7 +23,7 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{map_bound, MemTable};
 use crate::mvcc::LsmMvccInner;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
@@ -313,6 +314,10 @@ impl LsmStorageInner {
             CompactionOptions::NoCompaction => CompactionController::NoCompaction,
         };
 
+        // open or create manifest
+        // let manifest_path = path.join("MANIFEST");
+        // let manifest = Manifest::create(manifest_path)?;
+
         let storage = Self {
             state: Arc::new(RwLock::new(Arc::new(state))),
             state_lock: Mutex::new(()),
@@ -481,7 +486,8 @@ impl LsmStorageInner {
     }
 
     pub(super) fn sync_dir(&self) -> Result<()> {
-        unimplemented!()
+        File::open(&self.path)?.sync_all()?;
+        Ok(())
     }
 
     pub fn try_freeze(&self, estimated_size: usize) -> Result<()> {
@@ -545,6 +551,13 @@ impl LsmStorageInner {
             snapshot.sstables.insert(sst_id, sst);
             *state_guard = Arc::new(snapshot);
         }
+
+        // sync
+        self.sync_dir()?;
+        self.manifest
+            .as_ref()
+            .unwrap()
+            .add_record(&_state_lock, ManifestRecord::Flush(sst_id))?;
         Ok(())
     }
 

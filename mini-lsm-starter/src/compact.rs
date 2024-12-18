@@ -21,6 +21,7 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -294,7 +295,6 @@ impl LsmStorageInner {
             let mut state_guard = self.state.write();
             *state_guard = Arc::new(snapshot);
         }
-
         Ok(())
     }
 
@@ -319,7 +319,7 @@ impl LsmStorageInner {
 
         {
             // hold state_lock to prevent flush
-            let _state_lock = self.state_lock.lock();
+            let state_lock = self.state_lock.lock();
             let mut snapshot = self.state.read().as_ref().clone();
             let files_to_be_removed;
             // update snapshot.l0_sstables and snapshot.levels
@@ -333,6 +333,7 @@ impl LsmStorageInner {
                 let result = snapshot.sstables.remove(file);
                 assert!(result.is_some());
             }
+            self.sync_dir()?;
 
             // second add new files
             for file in new_sstables.iter() {
@@ -342,6 +343,12 @@ impl LsmStorageInner {
 
             let mut state_guard = self.state.write();
             *state_guard = Arc::new(snapshot);
+            drop(state_guard);
+            self.sync_dir()?;
+            self.manifest
+                .as_ref()
+                .unwrap()
+                .add_record(&state_lock, ManifestRecord::Compaction(task, output))?;
         }
 
         Ok(())

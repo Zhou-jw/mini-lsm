@@ -2,12 +2,11 @@
 
 use std::fs::OpenOptions;
 use std::io::Read;
-use std::{fs::File, io::Write};
 use std::path::Path;
 use std::sync::Arc;
+use std::{fs::File, io::Write};
 
 use anyhow::{Context, Result};
-use parking_lot::lock_api::Mutex;
 use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
@@ -27,8 +26,15 @@ pub enum ManifestRecord {
 
 impl Manifest {
     pub fn create(_path: impl AsRef<Path>) -> Result<Self> {
-        Ok(Manifest{
-            file: Arc::new(Mutex::new(OpenOptions::new().read(true).write(true).create(true).open(_path).context("fail to create manifest")?)),
+        Ok(Manifest {
+            file: Arc::new(Mutex::new(
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(_path)
+                    .context("fail to create manifest")?,
+            )),
         })
         // unimplemented!()
     }
@@ -37,15 +43,17 @@ impl Manifest {
         // let manifest= Self::create(_path)?;
         let mut file = OpenOptions::new().read(true).open(_path)?;
         let mut buf = Vec::new();
-        file.read_to_end(& mut buf)?;
+        file.read_to_end(&mut buf)?;
         let mut stream = Deserializer::from_slice(&buf).into_iter::<ManifestRecord>();
         let mut records = Vec::new();
         while let Some(x) = stream.next() {
-            records.push(x);
+            records.push(x?);
         }
         Ok((
-            Self{file:Arc::new(Mutex::new(file))},
-            records
+            Self {
+                file: Arc::new(Mutex::new(file)),
+            },
+            records,
         ))
     }
 
