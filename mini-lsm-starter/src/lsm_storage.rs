@@ -171,6 +171,35 @@ impl MiniLsm {
                 .join()
                 .map_err(|e| anyhow::anyhow!("{:?}", e))?;
         }
+
+        let mut compaction_thread = self.compaction_thread.lock();
+        if let Some(compaction_handler) = compaction_thread.take() {
+            compaction_handler
+                .join()
+                .map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        }
+
+        if self.inner.options.enable_wal {
+            self.inner.sync_dir()?;
+            self.inner.sync()?;
+        }
+
+        //check mem_table
+        if {
+            let snapshot = self.inner.state.read();
+            !snapshot.memtable.is_empty()
+        } {
+            self.inner.freeze_memtable_with_memtable()?;
+        }
+
+        //check imm_tables
+        while {
+            let snapshot = self.inner.state.read();
+            !snapshot.imm_memtables.is_empty()
+        } {
+            self.inner.force_flush_next_imm_memtable()?;
+        }
+        self.inner.sync_dir()?;
         Ok(())
     }
 
@@ -315,8 +344,8 @@ impl LsmStorageInner {
         };
 
         // open or create manifest
-        // let manifest_path = path.join("MANIFEST");
-        // let manifest = Manifest::create(manifest_path)?;
+        let manifest_path = path.join("MANIFEST");
+        let manifest = Manifest::create(manifest_path)?;
 
         let storage = Self {
             state: Arc::new(RwLock::new(Arc::new(state))),
@@ -325,7 +354,7 @@ impl LsmStorageInner {
             block_cache: Arc::new(BlockCache::new(1024)),
             next_sst_id: AtomicUsize::new(1),
             compaction_controller,
-            manifest: None,
+            manifest: Some(manifest),
             options: options.into(),
             mvcc: None,
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
@@ -504,21 +533,23 @@ impl LsmStorageInner {
         Ok(())
     }
 
-    /// Force freeze the current memtable to an immutable memtable
-    pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
+    pub fn freeze_memtable_with_memtable(&self) -> Result<()> {
         let next_id = self.next_sst_id();
         let new_memtable = Arc::new(MemTable::create(next_id));
-        let old_memtable;
-        {
-            let mut state_guard = self.state.write();
-            let mut snapshot = state_guard.as_ref().clone();
-            old_memtable = std::mem::replace(&mut snapshot.memtable, new_memtable);
+        let mut state_guard = self.state.write();
+        let mut snapshot = state_guard.as_ref().clone();
+        let old_memtable = std::mem::replace(&mut snapshot.memtable, new_memtable);
 
-            //snapshot.imm_memtables.insert(0, old_memtable.clone()); 多一个clone()是为什么
-            snapshot.imm_memtables.insert(0, old_memtable);
+        //snapshot.imm_memtables.insert(0, old_memtable.clone()); 多一个clone()是为什么
+        snapshot.imm_memtables.insert(0, old_memtable);
 
-            *state_guard = Arc::new(snapshot);
-        }
+        *state_guard = Arc::new(snapshot);
+        Ok(())
+    }
+
+    /// Force freeze the current memtable to an immutable memtable
+    pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
+        self.freeze_memtable_with_memtable()?;
         Ok(())
     }
 
