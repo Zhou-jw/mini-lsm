@@ -1,5 +1,3 @@
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::Path;
@@ -36,7 +34,6 @@ impl Manifest {
                     .context("fail to create manifest")?,
             )),
         })
-        // unimplemented!()
     }
 
     pub fn recover(_path: impl AsRef<Path>) -> Result<(Self, Vec<ManifestRecord>)> {

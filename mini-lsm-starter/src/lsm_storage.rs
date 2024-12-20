@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bytes::Bytes;
 use farmhash::fingerprint32;
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -23,10 +23,10 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
-use crate::manifest::{Manifest, ManifestRecord};
+use crate::manifest::{self, Manifest, ManifestRecord};
 use crate::mem_table::{map_bound, MemTable};
 use crate::mvcc::LsmMvccInner;
-use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
+use crate::table::{FileObject, SsTable, SsTableBuilder, SsTableIterator};
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
@@ -324,7 +324,7 @@ impl LsmStorageInner {
     /// not exist.
     pub(crate) fn open(path: impl AsRef<Path>, options: LsmStorageOptions) -> Result<Self> {
         let path = path.as_ref();
-        let state = LsmStorageState::create(&options);
+        let mut state = LsmStorageState::create(&options);
 
         if !path.exists() {
             std::fs::create_dir(path)?;
@@ -343,16 +343,46 @@ impl LsmStorageInner {
             CompactionOptions::NoCompaction => CompactionController::NoCompaction,
         };
 
-        // open or create manifest
+        // create manifest or recover
+        let manifest;
         let manifest_path = path.join("MANIFEST");
-        let manifest = Manifest::create(manifest_path)?;
+        let mut max_sst_id:usize = 0;
+        if !manifest_path.exists() {
+            manifest = Manifest::create(manifest_path)?;
+        }
+        else {
+            let (manifest_tmp, records) = Manifest::recover(manifest_path)?;
+            manifest = manifest_tmp;
+            for record in records {
+                match record {
+                    ManifestRecord::Flush(sst_id) => {
+                        state.l0_sstables.insert(0, sst_id);
+                        max_sst_id = max_sst_id.max(sst_id);
+                    }
+                    ManifestRecord::Compaction(task, output) => {
+                        let (new_state, _del_ssts) = compaction_controller.apply_compaction_result(&state, &task, &output, true);
+                        state = new_state;
+                        max_sst_id = max_sst_id.max(output.iter().max().copied().unwrap_or_default());
+                    }
+                    _ => unimplemented!()
+                }
+            }
+        }
+
+        // recover sstables
+        let block_cache = Arc::new(BlockCache::new(1024));
+        for sst_id in state.l0_sstables.iter().chain(state.levels.iter().flat_map(|(_, sst_ids)| sst_ids)) {
+            let sst_id = *sst_id;
+            let sst = SsTable::open(sst_id, Some(block_cache.clone()), FileObject::open(&LsmStorageInner::path_of_sst_static(path, sst_id))?).with_context(|| format!("fail to recover sstable {:?}", sst_id))?;
+            state.sstables.insert(sst_id, Arc::new(sst));
+        }
 
         let storage = Self {
             state: Arc::new(RwLock::new(Arc::new(state))),
             state_lock: Mutex::new(()),
             path: path.to_path_buf(),
-            block_cache: Arc::new(BlockCache::new(1024)),
-            next_sst_id: AtomicUsize::new(1),
+            block_cache,
+            next_sst_id: AtomicUsize::new(max_sst_id+1),
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
