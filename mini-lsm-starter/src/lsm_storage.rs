@@ -23,7 +23,7 @@ use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
 use crate::lsm_iterator::{FusedIterator, LsmIterator};
-use crate::manifest::{self, Manifest, ManifestRecord};
+use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{map_bound, MemTable};
 use crate::mvcc::LsmMvccInner;
 use crate::table::{FileObject, SsTable, SsTableBuilder, SsTableIterator};
@@ -603,6 +603,7 @@ impl LsmStorageInner {
             Some(self.block_cache.clone()),
             self.path_of_sst(sst_id),
         )?);
+        println!("flushed {}.sst with size={}", sst_id, sst.table_size());
 
         {
             let mut state_guard = self.state.write();
@@ -614,11 +615,11 @@ impl LsmStorageInner {
         }
 
         // sync
-        self.sync_dir()?;
         self.manifest
-            .as_ref()
-            .unwrap()
-            .add_record(&_state_lock, ManifestRecord::Flush(sst_id))?;
+        .as_ref()
+        .unwrap()
+        .add_record(&_state_lock, ManifestRecord::Flush(sst_id))?;
+        self.sync_dir()?;
         Ok(())
     }
 
