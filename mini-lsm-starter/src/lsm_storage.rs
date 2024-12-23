@@ -346,11 +346,10 @@ impl LsmStorageInner {
         // create manifest or recover
         let manifest;
         let manifest_path = path.join("MANIFEST");
-        let mut max_sst_id:usize = 0;
+        let mut max_sst_id: usize = 0;
         if !manifest_path.exists() {
             manifest = Manifest::create(manifest_path)?;
-        }
-        else {
+        } else {
             let (manifest_tmp, records) = Manifest::recover(manifest_path)?;
             manifest = manifest_tmp;
             for record in records {
@@ -360,20 +359,31 @@ impl LsmStorageInner {
                         max_sst_id = max_sst_id.max(sst_id);
                     }
                     ManifestRecord::Compaction(task, output) => {
-                        let (new_state, _del_ssts) = compaction_controller.apply_compaction_result(&state, &task, &output, true);
+                        let (new_state, _del_ssts) = compaction_controller
+                            .apply_compaction_result(&state, &task, &output, true);
                         state = new_state;
-                        max_sst_id = max_sst_id.max(output.iter().max().copied().unwrap_or_default());
+                        max_sst_id =
+                            max_sst_id.max(output.iter().max().copied().unwrap_or_default());
                     }
-                    _ => unimplemented!()
+                    _ => unimplemented!(),
                 }
             }
         }
 
         // recover sstables
         let block_cache = Arc::new(BlockCache::new(1024));
-        for sst_id in state.l0_sstables.iter().chain(state.levels.iter().flat_map(|(_, sst_ids)| sst_ids)) {
+        for sst_id in state
+            .l0_sstables
+            .iter()
+            .chain(state.levels.iter().flat_map(|(_, sst_ids)| sst_ids))
+        {
             let sst_id = *sst_id;
-            let sst = SsTable::open(sst_id, Some(block_cache.clone()), FileObject::open(&LsmStorageInner::path_of_sst_static(path, sst_id))?).with_context(|| format!("fail to recover sstable {:?}", sst_id))?;
+            let sst = SsTable::open(
+                sst_id,
+                Some(block_cache.clone()),
+                FileObject::open(&LsmStorageInner::path_of_sst_static(path, sst_id))?,
+            )
+            .with_context(|| format!("fail to recover sstable {:?}", sst_id))?;
             state.sstables.insert(sst_id, Arc::new(sst));
         }
 
@@ -382,7 +392,7 @@ impl LsmStorageInner {
             state_lock: Mutex::new(()),
             path: path.to_path_buf(),
             block_cache,
-            next_sst_id: AtomicUsize::new(max_sst_id+1),
+            next_sst_id: AtomicUsize::new(max_sst_id + 1),
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
@@ -603,7 +613,7 @@ impl LsmStorageInner {
             Some(self.block_cache.clone()),
             self.path_of_sst(sst_id),
         )?);
-        println!("flushed {}.sst with size={}", sst_id, sst.table_size());
+        // println!("flushed {}.sst with size={}", sst_id, sst.table_size());
 
         {
             let mut state_guard = self.state.write();
@@ -615,11 +625,11 @@ impl LsmStorageInner {
         }
 
         // sync
-        self.manifest
-        .as_ref()
-        .unwrap()
-        .add_record(&_state_lock, ManifestRecord::Flush(sst_id))?;
         self.sync_dir()?;
+        self.manifest
+            .as_ref()
+            .unwrap()
+            .add_record(&_state_lock, ManifestRecord::Flush(sst_id))?;
         Ok(())
     }
 
