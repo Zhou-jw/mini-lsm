@@ -189,7 +189,9 @@ impl MiniLsm {
             let snapshot = self.inner.state.read();
             !snapshot.memtable.is_empty()
         } {
-            self.inner.freeze_memtable_with_memtable()?;
+            let new_memtable = Arc::new(MemTable::create(self.inner.next_sst_id()));
+            self.inner
+                .freeze_old_memtable_with_new_memtable(new_memtable)?;
         }
 
         //check imm_tables
@@ -347,6 +349,7 @@ impl LsmStorageInner {
         let manifest;
         let manifest_path = path.join("MANIFEST");
         let mut max_sst_id: usize = 0;
+        let mut memtable_id = 0;
         if !manifest_path.exists() {
             manifest = Manifest::create(manifest_path)?;
         } else {
@@ -365,8 +368,21 @@ impl LsmStorageInner {
                         max_sst_id =
                             max_sst_id.max(output.iter().max().copied().unwrap_or_default());
                     }
-                    _ => unimplemented!(),
+                    ManifestRecord::NewMemtable(id) => {
+                        memtable_id = id;
+                        state.memtable = Arc::new(MemTable::create(memtable_id));
+                    }
                 }
+            }
+        }
+
+        // create wal or recover
+        if options.enable_wal {
+            let wal_path = path.join("WAL");
+            if wal_path.exists() {
+                state.memtable = Arc::new(MemTable::recover_from_wal(memtable_id, wal_path)?);
+            } else {
+                state.memtable = Arc::new(MemTable::create_with_wal(memtable_id, wal_path)?);
             }
         }
 
@@ -505,31 +521,28 @@ impl LsmStorageInner {
     }
 
     /// Put a key-value pair into the storage by writing into the current memtable.
-    pub fn put(&self, _key: &[u8], _value: &[u8]) -> Result<()> {
-        assert!(!_key.is_empty(), "key can not be empty");
-        assert!(!_value.is_empty(), "value can not be empty");
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        assert!(!key.is_empty(), "key can not be empty");
+        assert!(!value.is_empty(), "value can not be empty");
         let size;
         {
             let storage_guard = self.state.read();
-            storage_guard.memtable.put(_key, _value)?;
+            storage_guard.memtable.put(key, value)?;
             size = storage_guard.memtable.approximate_size();
         }
 
         self.try_freeze(size)?;
 
         Ok(())
-        // if let Ok(()) = storage.memtable.put(_key, _value) {
-        //     return Ok(if());
-        // }
     }
 
     /// Remove a key from the storage by writing an empty value.
-    pub fn delete(&self, _key: &[u8]) -> Result<()> {
-        assert!(!_key.is_empty(), "key cannot be empty");
+    pub fn delete(&self, key: &[u8]) -> Result<()> {
+        assert!(!key.is_empty(), "key cannot be empty");
         let size;
         {
             let storage_guard = self.state.read();
-            storage_guard.memtable.put(_key, b"")?;
+            storage_guard.memtable.put(key, b"")?;
             size = storage_guard.memtable.approximate_size();
         }
 
@@ -573,23 +586,30 @@ impl LsmStorageInner {
         Ok(())
     }
 
-    pub fn freeze_memtable_with_memtable(&self) -> Result<()> {
-        let next_id = self.next_sst_id();
-        let new_memtable = Arc::new(MemTable::create(next_id));
+    pub fn freeze_old_memtable_with_new_memtable(&self, new_memtable: Arc<MemTable>) -> Result<()> {
         let mut state_guard = self.state.write();
         let mut snapshot = state_guard.as_ref().clone();
         let old_memtable = std::mem::replace(&mut snapshot.memtable, new_memtable);
 
         //snapshot.imm_memtables.insert(0, old_memtable.clone()); 多一个clone()是为什么
-        snapshot.imm_memtables.insert(0, old_memtable);
-
+        snapshot.imm_memtables.insert(0, old_memtable.clone());
+        
         *state_guard = Arc::new(snapshot);
+        drop(state_guard);
+        old_memtable.sync_wal()?;
         Ok(())
     }
 
     /// Force freeze the current memtable to an immutable memtable
-    pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
-        self.freeze_memtable_with_memtable()?;
+    pub fn force_freeze_memtable(&self, state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
+        let next_id = self.next_sst_id();
+        let new_memtable = Arc::new(MemTable::create(next_id));
+        self.freeze_old_memtable_with_new_memtable(new_memtable)?;
+        self.manifest
+            .as_ref()
+            .unwrap()
+            .add_record(state_lock_observer, ManifestRecord::NewMemtable(next_id))?;
+        self.sync_dir()?;
         Ok(())
     }
 
@@ -625,11 +645,11 @@ impl LsmStorageInner {
         }
 
         // sync
-        self.sync_dir()?;
         self.manifest
             .as_ref()
             .unwrap()
             .add_record(&_state_lock, ManifestRecord::Flush(sst_id))?;
+        self.sync_dir()?;
         Ok(())
     }
 
