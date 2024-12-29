@@ -190,8 +190,7 @@ impl MiniLsm {
         if {
             let snapshot = self.inner.state.read();
             !snapshot.memtable.is_empty()
-        } && !self.inner.options.enable_wal
-        {
+        } {
             let new_memtable = Arc::new(MemTable::create(self.inner.next_sst_id()));
             self.inner
                 .freeze_old_memtable_with_new_memtable(new_memtable)?;
@@ -331,7 +330,7 @@ impl LsmStorageInner {
         let path = path.as_ref();
         let mut state = LsmStorageState::create(&options);
         let block_cache = Arc::new(BlockCache::new(1024));
-        let mut next_sst_id = 0;
+        let mut next_sst_id = 1;
 
         if !path.exists() {
             std::fs::create_dir(path)?;
@@ -358,8 +357,8 @@ impl LsmStorageInner {
             if options.enable_wal {
                 let wal_path = LsmStorageInner::path_of_wal_static(path, 0); // 0 is the id of the first memtable, which is created by LsmStorageState::create()
                 state.memtable = Arc::new(MemTable::create_with_wal(0, wal_path)?);
-                manifest.add_record_when_init(ManifestRecord::NewMemtable(0))?;
             }
+            manifest.add_record_when_init(ManifestRecord::NewMemtable(0))?;
         } else {
             let mut max_sst_id: usize = 0;
             let mut max_memtable_id: usize = 0;
@@ -381,7 +380,7 @@ impl LsmStorageInner {
                             max_sst_id.max(output.iter().max().copied().unwrap_or_default());
                     }
                     ManifestRecord::NewMemtable(id) => {
-                        state.memtable = Arc::new(MemTable::create(id));
+                        // state.memtable = Arc::new(MemTable::create(id));
                         memtables.insert(id);
                         max_memtable_id = max_memtable_id.max(id);
                     }
@@ -625,13 +624,18 @@ impl LsmStorageInner {
 
     /// Force freeze the current memtable to an immutable memtable
     pub fn force_freeze_memtable(&self, state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
-        let next_id = self.next_sst_id();
-        let new_memtable = Arc::new(MemTable::create(next_id));
+        let id = self.next_sst_id();
+        let new_memtable = if self.options.enable_wal {
+            let path = self.path_of_wal(id);
+            Arc::new(MemTable::create_with_wal(id, path)?)
+        } else {
+            Arc::new(MemTable::create(id))
+        };
         self.freeze_old_memtable_with_new_memtable(new_memtable)?;
         self.manifest
             .as_ref()
             .unwrap()
-            .add_record(state_lock_observer, ManifestRecord::NewMemtable(next_id))?;
+            .add_record(state_lock_observer, ManifestRecord::NewMemtable(id))?;
         self.sync_dir()?;
         Ok(())
     }

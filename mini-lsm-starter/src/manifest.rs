@@ -38,7 +38,7 @@ impl Manifest {
 
     pub fn recover(_path: impl AsRef<Path>) -> Result<(Self, Vec<ManifestRecord>)> {
         // let manifest= Self::create(_path)?;
-        let mut file = OpenOptions::new().read(true).open(_path)?;
+        let mut file = OpenOptions::new().read(true).append(true).open(_path)?; //Note that setting .write(true).append(true) has the same effect as setting only .append(true).
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
         let mut stream = Deserializer::from_slice(&buf).into_iter::<ManifestRecord>();
@@ -62,9 +62,9 @@ impl Manifest {
         self.add_record_when_init(record)
     }
 
-    pub fn add_record_when_init(&self, _record: ManifestRecord) -> Result<()> {
+    pub fn add_record_when_init(&self, record: ManifestRecord) -> Result<()> {
         let mut file_guard = self.file.lock();
-        let buf = serde_json::to_vec(&_record)?;
+        let buf = serde_json::to_vec(&record)?;
         file_guard.write_all(&buf)?;
         file_guard.sync_all()?;
         Ok(())
