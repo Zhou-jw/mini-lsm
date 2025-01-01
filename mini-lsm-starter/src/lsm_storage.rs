@@ -27,7 +27,6 @@ use crate::manifest::{Manifest, ManifestRecord};
 use crate::mem_table::{map_bound, MemTable};
 use crate::mvcc::LsmMvccInner;
 use crate::table::{FileObject, SsTable, SsTableBuilder, SsTableIterator};
-use crate::wal;
 
 pub type BlockCache = moka::sync::Cache<(usize, usize), Arc<Block>>;
 
