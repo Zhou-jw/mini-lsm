@@ -163,14 +163,14 @@ impl LsmStorageInner {
 
         Ok(sstables)
     }
-    fn compact(&self, _task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
+    fn compact(&self, task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
         let snapshot;
         {
             let state_guard = self.state.read();
             snapshot = state_guard.clone();
         }
 
-        match _task {
+        match task {
             CompactionTask::ForceFullCompaction {
                 l0_sstables,
                 l1_sstables,
@@ -258,6 +258,19 @@ impl LsmStorageInner {
                     }
                 }
             }
+            CompactionTask::Tiered(tiered_task) => {
+                let sst_ids = tiered_task
+                    .tiers
+                    .iter()
+                    .flat_map(|x| x.1.clone())
+                    .collect::<Vec<_>>();
+                let mut sstables_to_compact = Vec::with_capacity(sst_ids.len());
+                for id in sst_ids.iter() {
+                    sstables_to_compact.push(snapshot.sstables[id].clone());
+                }
+                let iter = SstConcatIterator::create_and_seek_to_first(sstables_to_compact)?;
+                self.compact_generate_ssts_from_iter(iter)
+            }
             _ => unimplemented!(),
         }
     }
@@ -320,6 +333,7 @@ impl LsmStorageInner {
         {
             // hold state_lock to prevent flush
             let state_lock = self.state_lock.lock();
+            println!("compaction will add new sstables: {:?}", output);
             let mut snapshot = self.state.read().as_ref().clone();
             let files_to_be_removed;
             // update snapshot.l0_sstables and snapshot.levels
@@ -342,6 +356,13 @@ impl LsmStorageInner {
             }
 
             let mut state_guard = self.state.write();
+
+            println!("===== After compaction =====");
+            for (tier, sstables) in snapshot.levels.iter() {
+                println!("L{:?} : {:?}", tier, sstables);
+            }
+            println!();
+
             *state_guard = Arc::new(snapshot);
             drop(state_guard);
             self.sync_dir()?;

@@ -44,7 +44,7 @@ impl TieredCompactionController {
         // trigger by space amplification ratio
         let mut all_size_except_last_level: usize = 0;
         let last_level_size: usize = snapshot.levels.last().unwrap().1.len();
-        for idx in 0..snapshot.levels.len() - 1 {
+        for idx in 0..(snapshot.levels.len() - 1) {
             all_size_except_last_level += snapshot.levels[idx].1.len();
         }
         let space_amplification_ratio =
@@ -67,7 +67,7 @@ impl TieredCompactionController {
         for idx in 1..snapshot.levels.len() {
             let size_current_iter = snapshot.levels[idx].1.len();
             let cur_size_ratio = size_current_iter as f64 / size_previous_tiers as f64;
-            if cur_size_ratio >= size_ratio_trigger && idx + 1 >= self.options.min_merge_width {
+            if cur_size_ratio > size_ratio_trigger && idx >= self.options.min_merge_width {
                 let task = TieredCompactionTask {
                     tiers: snapshot
                         .levels
@@ -75,11 +75,11 @@ impl TieredCompactionController {
                         .take(idx)
                         .cloned()
                         .collect::<Vec<(usize, Vec<usize>)>>(),
-                    bottom_tier_included: idx + 1 == snapshot.levels.len(), // TODO: idx+1 >= snapshot.levels.len()
+                    bottom_tier_included: idx >= snapshot.levels.len(), // TODO: idx+1 >= snapshot.levels.len()
                 };
                 println!(
-                    "size_ratio_trigger: {:?}, compaction triggered by size ratio: {:?}",
-                    size_ratio_trigger, cur_size_ratio
+                    "compaction triggered by size ratio: {:?} > size_ratio_trigger: {:?}",
+                    cur_size_ratio, size_ratio_trigger
                 );
                 return Some(task);
             }

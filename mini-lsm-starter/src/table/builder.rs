@@ -129,12 +129,12 @@ impl SsTableBuilder {
         // create file
         let file = FileObject::create(path.as_ref(), buf)?;
 
-        // println!(
-        //     "build {:?} , key range from {:?} to {:?}",
-        //     id,
-        //     self.meta.first().unwrap().first_key,
-        //     self.meta.last().unwrap().last_key
-        // );
+        println!(
+            "build {:?} , key range from {:?} to {:?}",
+            id,
+            self.meta.first().unwrap().first_key,
+            self.meta.last().unwrap().last_key
+        );
 
         Ok(SsTable {
             file,
