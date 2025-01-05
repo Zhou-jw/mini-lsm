@@ -36,14 +36,14 @@ impl Manifest {
         })
     }
 
-    pub fn recover(_path: impl AsRef<Path>) -> Result<(Self, Vec<ManifestRecord>)> {
+    pub fn recover(path: impl AsRef<Path>) -> Result<(Self, Vec<ManifestRecord>)> {
         // let manifest= Self::create(_path)?;
-        let mut file = OpenOptions::new().read(true).append(true).open(_path)?; //Note that setting .write(true).append(true) has the same effect as setting only .append(true).
+        let mut file = OpenOptions::new().read(true).append(true).open(path)?; //Note that setting .write(true).append(true) has the same effect as setting only .append(true).
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
-        let mut stream = Deserializer::from_slice(&buf).into_iter::<ManifestRecord>();
+        let stream = Deserializer::from_slice(&buf).into_iter::<ManifestRecord>();
         let mut records = Vec::new();
-        while let Some(x) = stream.next() {
+        for x in stream {
             records.push(x?);
         }
         Ok((

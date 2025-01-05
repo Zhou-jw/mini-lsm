@@ -136,6 +136,11 @@ impl SsTableBuilder {
             self.meta.last().unwrap().last_key
         );
 
+        assert!(
+            self.meta.first().unwrap().first_key <= self.meta.last().unwrap().last_key,
+            "wrong key order when building sstable!"
+        );
+
         Ok(SsTable {
             file,
             id,

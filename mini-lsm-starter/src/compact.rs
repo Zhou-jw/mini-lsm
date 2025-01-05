@@ -260,16 +260,19 @@ impl LsmStorageInner {
                 }
             }
             CompactionTask::Tiered(tiered_task) => {
-                let sst_ids = tiered_task
-                    .tiers
-                    .iter()
-                    .flat_map(|x| x.1.clone())
-                    .collect::<Vec<_>>();
-                let mut sst_iters = Vec::with_capacity(sst_ids.len());
-                for id in sst_ids.iter() {
-                    let table = snapshot.sstables[id].clone();
-                    let iter = SsTableIterator::create_and_seek_to_first(table)?;
-                    sst_iters.push(Box::new(iter));
+                let mut sst_iters = Vec::with_capacity(tiered_task.tiers.len());
+                // for id in sst_ids.iter() {
+                //     let table = snapshot.sstables[id].clone();
+                //     let iter = SsTableIterator::create_and_seek_to_first(table)?;
+                //     sst_iters.push(Box::new(iter));
+                // }
+                for (_, sst_ids) in tiered_task.tiers.iter() {
+                    let sstables = sst_ids
+                        .iter()
+                        .map(|x| snapshot.sstables[x].clone())
+                        .collect::<Vec<_>>();
+                    let concat_iter = SstConcatIterator::create_and_seek_to_first(sstables)?;
+                    sst_iters.push(Box::new(concat_iter));
                 }
                 let iter = MergeIterator::create(sst_iters);
                 self.compact_generate_ssts_from_iter(iter)
