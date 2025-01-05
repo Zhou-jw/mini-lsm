@@ -163,6 +163,7 @@ impl LsmStorageInner {
 
         Ok(sstables)
     }
+
     fn compact(&self, task: &CompactionTask) -> Result<Vec<Arc<SsTable>>> {
         let snapshot;
         {
@@ -264,11 +265,13 @@ impl LsmStorageInner {
                     .iter()
                     .flat_map(|x| x.1.clone())
                     .collect::<Vec<_>>();
-                let mut sstables_to_compact = Vec::with_capacity(sst_ids.len());
+                let mut sst_iters = Vec::with_capacity(sst_ids.len());
                 for id in sst_ids.iter() {
-                    sstables_to_compact.push(snapshot.sstables[id].clone());
+                    let table = snapshot.sstables[id].clone();
+                    let iter = SsTableIterator::create_and_seek_to_first(table)?;
+                    sst_iters.push(Box::new(iter));
                 }
-                let iter = SstConcatIterator::create_and_seek_to_first(sstables_to_compact)?;
+                let iter = MergeIterator::create(sst_iters);
                 self.compact_generate_ssts_from_iter(iter)
             }
             _ => unimplemented!(),

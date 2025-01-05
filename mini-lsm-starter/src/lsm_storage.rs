@@ -186,10 +186,11 @@ impl MiniLsm {
         }
 
         //check mem_table
-        if {
+        let res = {
             let snapshot = self.inner.state.read();
             !snapshot.memtable.is_empty()
-        } {
+        };
+        if res {
             let new_memtable = Arc::new(MemTable::create(self.inner.next_sst_id()));
             self.inner
                 .freeze_old_memtable_with_new_memtable(new_memtable)?;
