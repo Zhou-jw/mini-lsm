@@ -90,7 +90,8 @@ impl LeveledCompactionController {
         target_sizes[max_level - 1] = real_sizes[max_level - 1].max(base_level_size_bytes);
 
         let mut base_level = max_level;
-        for level in (0..max_level - 1).rev() { // level begin from max_level-2
+        for level in (0..max_level - 1).rev() {
+            // level iterate from max_level-2 to 0
             let next_level_size = target_sizes[level + 1];
             let this_level_size = next_level_size / self.options.level_size_multiplier;
             if next_level_size > base_level_size_bytes {
@@ -146,8 +147,11 @@ impl LeveledCompactionController {
         priorities.sort_by(|a, b| a.partial_cmp(b).unwrap().reverse());
         if let Some((_, level)) = priorities.first() {
             let level = *level;
-            let lower_level_sst_ids =
-                self.find_overlapping_ssts(snapshot, snapshot.levels[level].1.as_slice(), level);
+            let lower_level_sst_ids = self.find_overlapping_ssts(
+                snapshot,
+                snapshot.levels[level - 1].1.as_slice(),
+                level + 1,
+            );
             return Some(LeveledCompactionTask {
                 upper_level: Some(level),
                 upper_level_sst_ids: snapshot.levels[level - 1].1.clone(),
@@ -170,6 +174,16 @@ impl LeveledCompactionController {
         let sst_ids = output.to_vec();
         println!("output = {:?}", sst_ids);
 
+        let mut upper_level_sst_ids_set = task
+            .upper_level_sst_ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        let mut lower_level_sst_ids_set = task
+            .lower_level_sst_ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
         match task.upper_level {
             None => {
                 // == Attention! ==
@@ -177,22 +191,19 @@ impl LeveledCompactionController {
                 // when compact, there may be new sstables flush to l0
                 // so we need to reserve new l0_sstables and remove old l0_sstables
                 let mut del_sst_ids = task.upper_level_sst_ids.clone();
-                println!("del_l0_sst_ids = {:?}", del_sst_ids);
                 del_sst_ids.extend(task.lower_level_sst_ids.iter());
+
+                println!("del_l0_sst_ids = {:?}", task.upper_level_sst_ids);
                 println!("del_l1_sst_ids = {:?}", task.lower_level_sst_ids);
-                let mut l0_sstables_compacted = task
-                    .upper_level_sst_ids
-                    .iter()
-                    .copied()
-                    .collect::<HashSet<_>>();
-                let mut 
+
                 let new_l0_sstables = new_state
                     .l0_sstables
                     .iter()
                     .copied()
-                    .filter(|x| !l0_sstables_compacted.remove(x))
+                    .filter(|x| !upper_level_sst_ids_set.remove(x))
                     .collect::<Vec<_>>();
-                assert!(l0_sstables_compacted.is_empty());
+                assert!(upper_level_sst_ids_set.is_empty());
+
                 new_state.l0_sstables = new_l0_sstables;
                 new_state.levels[task.lower_level - 1] = (task.lower_level, sst_ids.clone());
                 (new_state, del_sst_ids)
@@ -205,15 +216,16 @@ impl LeveledCompactionController {
                 del_sst_ids.extend(task.lower_level_sst_ids.iter());
                 println!(
                     "del_l{:?}_sst_ids = {:?}",
-                    lower_l,
-                    task.lower_level_sst_ids
+                    lower_l, task.lower_level_sst_ids
                 );
-                let mut upper_level_sst_ids_set = task.upper_level_sst_ids.iter().copied().collect::<HashSet<_>>();
-                let mut lower_level_sst_ids_set = task.lower_level_sst_ids.iter().copied().collect::<HashSet<_>>();
-                let new_upper_level_sst_ids = snapshot.levels[upper_l-1].1.iter().copied().filter(|x| !upper_level_sst_ids_set.remove(x)).collect::<Vec<_>>();
-                let new_lower_level_sst_ids = snapshot.levels[lower_l-1].1.iter().copied().filter(|x| !lower_level_sst_ids_set.remove(x)).collect::<Vec<_>>();
-                new_state.levels[upper_l-1] = (upper_l, new_upper_level_sst_ids);
-                new_state.levels[lower_l-1] = (lower_l, new_lower_level_sst_ids);
+                let new_lower_level_sst_ids = snapshot.levels[lower_l - 1]
+                    .1
+                    .iter()
+                    .copied()
+                    .filter(|x| !lower_level_sst_ids_set.remove(x))
+                    .collect::<Vec<_>>();
+                new_state.levels[upper_l - 1] = (upper_l, Vec::new());
+                new_state.levels[lower_l - 1] = (lower_l, new_lower_level_sst_ids);
                 (new_state, del_sst_ids)
             }
         }
