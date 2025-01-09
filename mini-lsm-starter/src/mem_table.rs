@@ -41,7 +41,7 @@ impl MemTable {
         Self {
             map: Arc::new(SkipMap::new()),
             wal: None,
-            id: id,
+            id,
             approximate_size: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -51,7 +51,7 @@ impl MemTable {
         Ok(Self {
             map: Arc::default(),
             wal: Some(Wal::create(path)?),
-            id: id,
+            id,
             approximate_size: Arc::default(),
         })
     }

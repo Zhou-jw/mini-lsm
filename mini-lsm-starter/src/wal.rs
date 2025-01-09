@@ -20,7 +20,7 @@ impl Wal {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
+            .create_new(true)
             .open(path)
             .context("fail to create WAL!")?;
         Ok(Self {

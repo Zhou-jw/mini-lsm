@@ -673,6 +673,7 @@ impl LsmStorageInner {
             }
             snapshot.sstables.insert(sst_id, sst);
             println!("===== After flush =====");
+            println!("L0 : {:?}", snapshot.l0_sstables);
             for (tier, sstables) in snapshot.levels.iter() {
                 println!("L{:?} : {:?}", tier, sstables);
             }

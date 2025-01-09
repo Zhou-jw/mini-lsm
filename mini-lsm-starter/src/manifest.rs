@@ -29,7 +29,7 @@ impl Manifest {
                 OpenOptions::new()
                     .read(true)
                     .write(true)
-                    .create(true)
+                    .create_new(true)
                     .open(_path)
                     .context("fail to create manifest")?,
             )),
