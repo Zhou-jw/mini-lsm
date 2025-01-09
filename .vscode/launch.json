@@ -1,0 +1,51 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb-dap",
+            "request": "launch",
+            "name": "Debug",
+            "program": "${workspaceRoot}/<your program>",
+            "args": [],
+            "env": [],
+            "cwd": "${workspaceRoot}"
+        },
+        {
+            "type": "lldb-dap",
+            "request": "launch",
+            "name": "run compaction-simulator",
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/target/debug/compaction-simulator",
+            "env": [
+                "RUST_BACKTRACE=short",
+                "RUSTC_TOOLCHAIN=/home/zjw/.rustup/toolchains/stable-x86_64-unknown-linux-gnu"
+            ],
+            "args": [
+                "leveled",
+                "--iterations",
+                "10"
+            ]
+        },
+        {
+            "type": "lldb-dap",
+            "request": "launch",
+            "name": "test-mod tests::week2_day5",
+            "cwd": "${workspaceFolder}/mini-lsm-starter",
+            "program": "${workspaceFolder}/target/debug/deps/mini_lsm_starter-2d0762fe7fe1beb0",
+            "env": [
+                "RUST_BACKTRACE=short",
+                "RUSTC_TOOLCHAIN=/home/zjw/.rustup/toolchains/stable-x86_64-unknown-linux-gnu"
+            ],
+            "preRunCommands": [
+                "command script import ${workspaceFolder}/util/rust_prettifier_for_lldb.py",
+            ],
+            "args": [
+                "tests::week2_day5",
+                "--show-output"
+            ]
+        }
+    ]
+}
