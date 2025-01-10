@@ -74,13 +74,14 @@ impl SsTableBuilder {
         // std::mem::replace() is really helpful
         let block = std::mem::replace(&mut self.builder, BlockBuilder::new(self.block_size));
         let encoded_data = block.build().encode();
-        // let x = std::mem::take(&mut self.first_key).as_slice();
+        let check_sum = crc32fast::hash(&encoded_data);
         self.meta.push(BlockMeta {
             offset: self.data.len(),
             first_key: KeyVec::from_vec(std::mem::take(&mut self.first_key)).into_key_bytes(),
             last_key: KeyVec::from_vec(std::mem::take(&mut self.last_key)).into_key_bytes(),
         });
         self.data.extend(encoded_data); //TODO why return a Bytes and extend it to data instead of returning a Vec?
+        self.data.put_u32(check_sum);
     }
 
     /// Get the estimated size of the SSTable.
