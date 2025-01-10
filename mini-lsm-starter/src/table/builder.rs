@@ -129,23 +129,26 @@ impl SsTableBuilder {
         // create file
         let file = FileObject::create(path.as_ref(), buf)?;
 
+        let first_key = self.meta.first().unwrap().first_key.clone();
+        let last_key = self.meta.last().unwrap().last_key.clone();
         println!(
             "build {:?} , key range from {:?} to {:?}",
             id,
-            self.meta.first().unwrap().first_key,
-            self.meta.last().unwrap().last_key
+            &first_key.raw_ref()[first_key.len().saturating_sub(6)..],
+            &last_key.raw_ref()[last_key.len().saturating_sub(6)..]
         );
 
         assert!(
-            self.meta.first().unwrap().first_key <= self.meta.last().unwrap().last_key,
-            "wrong key order when building sstable!"
+            first_key <= last_key,
+            "wrong key order when building sstable! sst_id = {:?}, \nfirst_key: {:?}, \nlast_key: {:?}\n",
+            id, &first_key.raw_ref()[first_key.len().saturating_sub(6)..] , &last_key.raw_ref()[last_key.len().saturating_sub(6)..]
         );
 
         Ok(SsTable {
             file,
             id,
-            first_key: self.meta.first().unwrap().first_key.clone(),
-            last_key: self.meta.last().unwrap().last_key.clone(),
+            first_key,
+            last_key,
             bloom: Some(bloom),
             block_cache,
             block_meta: self.meta,

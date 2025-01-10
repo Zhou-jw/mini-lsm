@@ -260,6 +260,17 @@ impl LsmStorageInner {
                 }
             }
             CompactionTask::Leveled(leveled_task) => {
+                println!("\n===== Compaction task =====");
+                println!(
+                    "L{:?} : {:?}",
+                    leveled_task.upper_level, leveled_task.upper_level_sst_ids
+                );
+                println!(
+                    "L{:?} : {:?}",
+                    leveled_task.lower_level, leveled_task.lower_level_sst_ids
+                );
+                println!("===========================\n");
+
                 let mut lower_ssts = Vec::with_capacity(leveled_task.lower_level_sst_ids.len());
                 for sst_id in leveled_task.lower_level_sst_ids.iter() {
                     lower_ssts.push(snapshot.sstables[sst_id].clone());
@@ -374,30 +385,31 @@ impl LsmStorageInner {
             // hold state_lock to prevent flush
             let state_lock = self.state_lock.lock();
             println!("compaction will add new sstables: {:?}", output);
+
             let mut snapshot = self.state.read().as_ref().clone();
+            // 1. update snapshot.sstables
+            // 1.1 first add new files to snapshot
+            for file in new_sstables.iter() {
+                let result = snapshot.sstables.insert(file.sst_id(), file.clone());
+                assert!(result.is_none());
+            }
             let files_to_be_removed;
-            // update snapshot.l0_sstables and snapshot.levels
+            // 1.2 update snapshot.l0_sstables and snapshot.levels
             (snapshot, files_to_be_removed) = self
                 .compaction_controller
                 .apply_compaction_result(&snapshot, &task, &output, false);
 
-            // update snapshot.sstables
-            // first remove old files
+            // 1.3 remove old files
             for file in files_to_be_removed.iter() {
                 let result = snapshot.sstables.remove(file);
                 assert!(result.is_some());
             }
             self.sync_dir()?;
 
-            // second add new files
-            for file in new_sstables.iter() {
-                let result = snapshot.sstables.insert(file.sst_id(), file.clone());
-                assert!(result.is_none());
-            }
-
             let mut state_guard = self.state.write();
 
             println!("===== After compaction =====");
+            println!("L0 : {:?}", snapshot.l0_sstables);
             for (tier, sstables) in snapshot.levels.iter() {
                 println!("L{:?} : {:?}", tier, sstables);
             }

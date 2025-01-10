@@ -421,6 +421,23 @@ impl LsmStorageInner {
                 .with_context(|| format!("fail to recover sstable {:?}", sst_id))?;
                 state.sstables.insert(sst_id, Arc::new(sst));
             }
+
+            // only for leveled compaction, sort the sstables of each level
+            if let CompactionController::Leveled(_) = compaction_controller {
+                for (_level, sst_ids) in &mut state.levels {
+                    sst_ids.sort_by(|a, b| {
+                        state.sstables[a]
+                            .first_key()
+                            .cmp(state.sstables[b].first_key())
+                    });
+                }
+                println!("===== After recovery =====");
+                println!("L0 = {:?}", state.l0_sstables);
+                for i in state.levels.iter() {
+                    println!("L{:?} = {:?}", i.0, i.1);
+                }
+                println!();
+            }
         }
 
         let storage = Self {

@@ -173,7 +173,7 @@ impl LeveledCompactionController {
         snapshot: &LsmStorageState,
         task: &LeveledCompactionTask,
         output: &[usize],
-        _in_recovery: bool,
+        in_recovery: bool,
     ) -> (LsmStorageState, Vec<usize>) {
         let mut new_state = snapshot.clone();
         let output = output.to_vec();
@@ -189,6 +189,8 @@ impl LeveledCompactionController {
             .iter()
             .copied()
             .collect::<HashSet<_>>();
+
+        // 1. dealing with upper_level_sst_ids
         match task.upper_level {
             None => {
                 // == Attention! ==
@@ -206,16 +208,6 @@ impl LeveledCompactionController {
                 new_state.l0_sstables = new_l0_sstables;
             }
             Some(upper_l) => {
-                // println!("_output = {:?}", _output);
-
-                // for id in &snapshot.levels[lower_l - 1].1 {
-                //     if lower_level_sst_ids_set.is_empty() {
-                //         new_lower_level_sst_ids.push(*id);
-                //     }
-                //     if !lower_level_sst_ids_set.remove(id) {
-                //         new_lower_level_sst_ids.push(*id);
-                //     }
-                // }
                 new_state.levels[upper_l - 1] = (upper_l, Vec::new());
             }
         }
@@ -231,33 +223,47 @@ impl LeveledCompactionController {
             task.lower_level, task.lower_level_sst_ids
         );
 
-        //insert output to level 1 / lower_level
+        // 2.dealing with lower_level_sst_ids
+        // 2.1 insert output to level 1 / lower_level
         let lower_l = task.lower_level;
         let mut new_lower_sstables = Vec::new();
-        let lower_len = snapshot.levels[lower_l - 1].1.len();
-        let mut concat_idx = lower_len;
-        for idx in 0..lower_len {
-            if lower_level_sst_ids_set.is_empty() {
-                concat_idx = idx;
-                break;
+        if !in_recovery {
+            let lower_len = snapshot.levels[lower_l - 1].1.len();
+            let mut concat_idx = lower_len;
+            for idx in 0..lower_len {
+                let id = snapshot.levels[lower_l - 1].1[idx];
+                if lower_level_sst_ids_set.is_empty()
+                    && snapshot.sstables[output.first().unwrap()].first_key()
+                        <= snapshot.sstables[&id].first_key()
+                {
+                    concat_idx = idx;
+                    break;
+                }
+                if !lower_level_sst_ids_set.remove(&id) {
+                    new_lower_sstables.push(id);
+                }
             }
-            let id = snapshot.levels[lower_l - 1].1[idx];
-            if !lower_level_sst_ids_set.remove(&id) {
-                new_lower_sstables.push(id);
-            }
+            new_lower_sstables.extend(output.iter());
+            // push remaining id to new_lower_sstables
+            new_lower_sstables.extend_from_slice(&snapshot.levels[lower_l - 1].1[concat_idx..]);
+            println!(
+                "old l{:?}_sst_ids = {:?}",
+                task.lower_level,
+                snapshot.levels[lower_l - 1].1
+            );
+            println!(
+                "new l{:?}_sst_ids = {:?}",
+                task.lower_level, new_lower_sstables
+            );
+        } else {
+            new_lower_sstables = new_state.levels[lower_l - 1]
+                .1
+                .iter()
+                .copied()
+                .filter(|x| !upper_level_sst_ids_set.remove(x))
+                .collect::<Vec<_>>();
+            new_lower_sstables.extend(output.iter());
         }
-        new_lower_sstables.extend(output.iter());
-        // push remaining id to new_lower_sstables
-        new_lower_sstables.extend_from_slice(&snapshot.levels[lower_l - 1].1[concat_idx..]);
-        println!(
-            "old l{:?}_sst_ids = {:?}",
-            task.lower_level,
-            snapshot.levels[lower_l - 1].1
-        );
-        println!(
-            "new l{:?}_sst_ids = {:?}",
-            task.lower_level, new_lower_sstables
-        );
         new_state.levels[lower_l - 1] = (task.lower_level, new_lower_sstables);
         (new_state, del_sst_ids)
     }
