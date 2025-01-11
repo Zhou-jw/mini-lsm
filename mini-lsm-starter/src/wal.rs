@@ -1,14 +1,19 @@
 #![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
 
 use std::fs::{File, OpenOptions};
+// use std::hash::Hasher;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut, Bytes};
 use crossbeam_skiplist::SkipMap;
 use parking_lot::Mutex;
+
+use crate::block::SIZEOF_U16;
+
+pub(crate) const SIZEOF_USIZE: usize = std::mem::size_of::<u16>();
 
 pub struct Wal {
     file: Arc<Mutex<BufWriter<File>>>,
@@ -33,6 +38,7 @@ impl Wal {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
         let mut rbuf: &[u8] = buf.as_slice();
+        let mut pos = 0;
         while rbuf.has_remaining() {
             let key_len = rbuf.get_u16() as usize;
             let key = Bytes::copy_from_slice(&rbuf[..key_len]);
@@ -40,6 +46,18 @@ impl Wal {
             let value_len = rbuf.get_u16() as usize;
             let value = Bytes::copy_from_slice(&rbuf[..value_len]);
             rbuf.advance(value_len);
+            // let mut hasher = crc32fast::Hasher::new();
+            // hasher.write_u16(key_len as u16);
+            // hasher.write(key.as_ref());
+            // hasher.write_u16(value_len as u16);
+            // hasher.write(value.as_ref());
+            // let checksum = hasher.finalize();
+            let end = pos + 2 * SIZEOF_U16 + key_len + value_len;
+            let checksum = crc32fast::hash(&buf[pos..end]);
+            if checksum != rbuf.get_u32() {
+                bail!("mismatched wsl checksum!");
+            }
+            pos = end + 4;
             skiplist.insert(key, value);
         }
 
@@ -57,6 +75,16 @@ impl Wal {
         buf.put_slice(key);
         buf.put_u16(value.len() as u16);
         buf.put_slice(value);
+        // let mut hasher = crc32fast::Hasher::new();
+        // hasher.write_u16(key.len() as u16);
+        // hasher.write(key);
+        // hasher.write_u16(value.len() as u16);
+        // hasher.write(value);
+        // buf.put_u32(hasher.finalize());
+
+        let checksum = crc32fast::hash(buf.as_ref());
+        buf.put_u32(checksum);
+
         file.write_all(buf.as_slice())
             .context("fail to write to WAL")?;
         Ok(())
