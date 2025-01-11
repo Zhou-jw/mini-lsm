@@ -1,6 +1,3 @@
-#![allow(unused_variables)] // TODO(you): remove this lint after implementing this mod
-#![allow(dead_code)] // TODO(you): remove this lint after implementing this mod
-
 pub(crate) mod bloom;
 mod builder;
 mod iterator;
@@ -36,17 +33,16 @@ impl BlockMeta {
     /// Encode block meta to a buffer.
     /// You may add extra fields to the buffer,
     /// in order to help keep track of `first_key` when decoding from the same buffer in the future.
-    /// -------------------------------------------------------------------------------------------
-    /// |                                         Meta                                      | ... |
-    /// -------------------------------------------------------------------------------------------
-    /// | block_offset(u32) | first_key_len(u16) | first_key | last_key_len(u16) | last_key | ... |
-    /// -------------------------------------------------------------------------------------------
+    /// -----------------------------------------------------------------------------------------------------------------
+    /// |                                         Meta                                                 | ... |          |
+    /// -----------------------------------------------------------------------------------------------------------------
+    /// | meta_bum | block_offset(u32) | first_key_len(u16) | first_key | last_key_len(u16) | last_key | ... | checksum |
+    /// -----------------------------------------------------------------------------------------------------------------
     pub fn encode_block_meta(
         block_meta: &[BlockMeta],
         #[allow(clippy::ptr_arg)] // remove this allow after you finish
         buf: &mut Vec<u8>,
     ) {
-        let meta_block_offset = buf.len() as u32;
         let mut estimated_size = 0;
         for meta in block_meta {
             estimated_size += SIZEOF_U32;
@@ -57,6 +53,9 @@ impl BlockMeta {
         }
         buf.reserve(estimated_size);
 
+        let meta_block_offset = buf.len();
+        let meta_num = block_meta.len();
+        buf.put_u32(meta_num as u32);
         for meta in block_meta {
             buf.put_u32(meta.offset as u32);
             buf.put_u16(meta.first_key.len() as u16);
@@ -64,12 +63,17 @@ impl BlockMeta {
             buf.put_u16(meta.last_key.len() as u16);
             buf.extend(meta.last_key.raw_ref());
         }
+
+        let meta_checksum = crc32fast::hash(&buf[meta_block_offset + 4..]);
+        buf.put_u32(meta_checksum);
     }
 
     /// Decode block meta from a buffer.
-    pub fn decode_block_meta(mut buf: impl Buf) -> Vec<BlockMeta> {
+    pub fn decode_block_meta(mut buf: &[u8]) -> Result<Vec<BlockMeta>> {
         let mut block_meta = Vec::new();
-        while buf.has_remaining() {
+        let meta_num = buf.get_u32();
+        let checksum = crc32fast::hash(&buf[..buf.remaining() - 4]);
+        for _ in 0..meta_num {
             let meta_offset = buf.get_u32() as usize;
             let first_key_l = buf.get_u16() as usize;
             let first_key = buf.copy_to_bytes(first_key_l);
@@ -81,7 +85,11 @@ impl BlockMeta {
                 last_key: KeyBytes::from_bytes(last_key),
             })
         }
-        block_meta
+        let read_meta_chksum = buf.get_u32();
+        if read_meta_chksum != checksum {
+            bail!("mismatched meta checksum !");
+        }
+        Ok(block_meta)
     }
 }
 
@@ -156,7 +164,7 @@ impl SsTable {
         let raw_meta_offset = file.read(bloom_offset - 4, 4)?;
         let block_meta_offset = (&raw_meta_offset[..]).get_u32() as u64;
         let raw_block_meta = file.read(block_meta_offset, bloom_offset - 4 - block_meta_offset)?;
-        let block_meta = BlockMeta::decode_block_meta(&raw_block_meta[..]);
+        let block_meta = BlockMeta::decode_block_meta(&raw_block_meta[..]).unwrap();
         let first_key = block_meta.first().unwrap().first_key.clone();
         let last_key = block_meta.last().unwrap().last_key.clone();
 
