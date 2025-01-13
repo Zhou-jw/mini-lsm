@@ -4,10 +4,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{fs::File, io::Write};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use bytes::{Buf, BufMut};
 use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
-use serde_json::Deserializer;
 
 use crate::compact::CompactionTask;
 
@@ -41,11 +41,22 @@ impl Manifest {
         let mut file = OpenOptions::new().read(true).append(true).open(path)?; //Note that setting .write(true).append(true) has the same effect as setting only .append(true).
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
-        let stream = Deserializer::from_slice(&buf).into_iter::<ManifestRecord>();
+        let mut buf_ptr = buf.as_slice();
         let mut records = Vec::new();
-        for x in stream {
-            records.push(x?);
+
+        while buf_ptr.has_remaining() {
+            let len = buf_ptr.get_u64();
+            let slice = &buf_ptr[0..len as usize];
+            let chksum = crc32fast::hash(slice);
+            buf_ptr.advance(len as usize);
+            let read_chksum = buf_ptr.get_u32();
+            if chksum != read_chksum {
+                bail!("mismatched manifest checksum!");
+            }
+            let record = serde_json::from_slice::<ManifestRecord>(slice)?;
+            records.push(record);
         }
+
         Ok((
             Self {
                 file: Arc::new(Mutex::new(file)),
@@ -64,7 +75,10 @@ impl Manifest {
 
     pub fn add_record_when_init(&self, record: ManifestRecord) -> Result<()> {
         let mut file_guard = self.file.lock();
-        let buf = serde_json::to_vec(&record)?;
+        let mut buf = serde_json::to_vec(&record)?;
+        file_guard.write_all(&(buf.len() as u64).to_be_bytes())?;
+        let hash = crc32fast::hash(&buf);
+        buf.put_u32(hash);
         file_guard.write_all(&buf)?;
         file_guard.sync_all()?;
         Ok(())

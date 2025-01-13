@@ -1,5 +1,3 @@
-#![allow(dead_code)] // REMOVE THIS LINE after fully implementing this functionality
-
 use std::fs::{File, OpenOptions};
 // use std::hash::Hasher;
 use std::io::{BufWriter, Read, Write};
@@ -12,8 +10,6 @@ use crossbeam_skiplist::SkipMap;
 use parking_lot::Mutex;
 
 use crate::block::SIZEOF_U16;
-
-pub(crate) const SIZEOF_USIZE: usize = std::mem::size_of::<u16>();
 
 pub struct Wal {
     file: Arc<Mutex<BufWriter<File>>>,
