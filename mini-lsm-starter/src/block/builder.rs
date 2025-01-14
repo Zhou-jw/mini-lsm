@@ -44,7 +44,7 @@ impl BlockBuilder {
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
     #[must_use]
-    pub fn add(&mut self, key: KeySlice, value: &[u8], ts: u64) -> bool {
+    pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
         if key.is_empty() {
             println!("block build try to add empty key");
             return false;
@@ -69,7 +69,7 @@ impl BlockBuilder {
         self.data.put_u16(key_overlap_len as u16);
         self.data.put_u16(res_len as u16);
         self.data.put(res_key);
-        self.data.put_u64(ts);
+        self.data.put_u64(key.ts());
         self.data.put_u16(value.len() as u16);
         self.data.put(value);
 

@@ -43,14 +43,16 @@ impl BlockMeta {
         #[allow(clippy::ptr_arg)] // remove this allow after you finish
         buf: &mut Vec<u8>,
     ) {
+        let original_len = buf.len();
         let mut estimated_size = 0;
         for meta in block_meta {
             estimated_size += SIZEOF_U32;
             estimated_size += SIZEOF_U16;
-            estimated_size += meta.first_key.len();
+            estimated_size += meta.first_key.raw_len();
             estimated_size += SIZEOF_U16;
-            estimated_size += meta.last_key.len();
+            estimated_size += meta.last_key.raw_len();
         }
+        estimated_size += SIZEOF_U32; // size of checksum
         buf.reserve(estimated_size);
 
         let meta_block_offset = buf.len();
@@ -58,14 +60,17 @@ impl BlockMeta {
         buf.put_u32(meta_num as u32);
         for meta in block_meta {
             buf.put_u32(meta.offset as u32);
-            buf.put_u16(meta.first_key.len() as u16);
-            buf.put_slice(meta.first_key.raw_ref());
-            buf.put_u16(meta.last_key.len() as u16);
-            buf.extend(meta.last_key.raw_ref());
+            buf.put_u16(meta.first_key.key_len() as u16);
+            buf.put_slice(meta.first_key.key_ref());
+            buf.put_u64(meta.first_key.ts());
+            buf.put_u16(meta.last_key.key_len() as u16);
+            buf.put_slice(meta.last_key.key_ref());
+            buf.put_u64(meta.last_key.ts());
         }
 
         let meta_checksum = crc32fast::hash(&buf[meta_block_offset + 4..]);
         buf.put_u32(meta_checksum);
+        assert_eq!(estimated_size, buf.len() - original_len);
     }
 
     /// Decode block meta from a buffer.
@@ -77,12 +82,14 @@ impl BlockMeta {
             let meta_offset = buf.get_u32() as usize;
             let first_key_l = buf.get_u16() as usize;
             let first_key = buf.copy_to_bytes(first_key_l);
+            let ts_f = buf.get_u64();
             let last_key_l = buf.get_u16() as usize;
             let last_key = buf.copy_to_bytes(last_key_l);
+            let ts_l = buf.get_u64();
             block_meta.push(BlockMeta {
                 offset: meta_offset,
-                first_key: KeyBytes::from_bytes(first_key),
-                last_key: KeyBytes::from_bytes(last_key),
+                first_key: KeyBytes::from_bytes(first_key, ts_f),
+                last_key: KeyBytes::from_bytes(last_key, ts_l),
             })
         }
         let read_meta_chksum = buf.get_u32();

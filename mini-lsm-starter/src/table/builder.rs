@@ -15,8 +15,8 @@ use crate::{
 /// Builds an SSTable from key-value pairs.
 pub struct SsTableBuilder {
     builder: BlockBuilder,
-    first_key: Vec<u8>,
-    last_key: Vec<u8>,
+    first_key: KeyVec,
+    last_key: KeyVec,
     data: Vec<u8>,
     pub(crate) meta: Vec<BlockMeta>,
     block_size: usize,
@@ -28,8 +28,8 @@ impl SsTableBuilder {
     pub fn new(block_size: usize) -> Self {
         Self {
             builder: BlockBuilder::new(block_size),
-            first_key: Vec::new(),
-            last_key: Vec::new(),
+            first_key: KeyVec::new(),
+            last_key: KeyVec::new(),
             data: Vec::new(),
             meta: Vec::new(),
             block_size,
@@ -45,15 +45,15 @@ impl SsTableBuilder {
         // if first_key is empty, (k, v) is the first kv pair
         if self.first_key.is_empty() {
             self.first_key.clear();
-            self.first_key.extend(key.into_inner());
+            self.first_key.set_from_slice(key);
         }
 
-        self.key_hashes.push(fingerprint32(key.into_inner()));
+        self.key_hashes.push(fingerprint32(key.key_ref()));
 
         // if successfully add(k, v), update lask_key
         if self.builder.add(key, value) {
             self.last_key.clear();
-            self.last_key.extend(key.into_inner());
+            self.last_key.set_from_slice(key);
             return;
         }
 
@@ -63,9 +63,9 @@ impl SsTableBuilder {
         //insert kv again and update first_key and last_key
         assert!(self.builder.add(key, value));
         self.first_key.clear();
-        self.first_key.extend(key.into_inner());
+        self.first_key.append(key.into_inner());
         self.last_key.clear();
-        self.last_key.extend(key.into_inner());
+        self.last_key.append(key.into_inner());
     }
 
     pub fn finish_block(&mut self) {
@@ -77,8 +77,8 @@ impl SsTableBuilder {
         let check_sum = crc32fast::hash(&encoded_data);
         self.meta.push(BlockMeta {
             offset: self.data.len(),
-            first_key: KeyVec::from_vec(std::mem::take(&mut self.first_key)).into_key_bytes(),
-            last_key: KeyVec::from_vec(std::mem::take(&mut self.last_key)).into_key_bytes(),
+            first_key: std::mem::take(&mut self.first_key).into_key_bytes(),
+            last_key: std::mem::take(&mut self.last_key).into_key_bytes(),
         });
         self.data.extend(encoded_data); //TODO why return a Bytes and extend it to data instead of returning a Vec?
         self.data.put_u32(check_sum);
@@ -135,14 +135,14 @@ impl SsTableBuilder {
         println!(
             "build {:?} , key range from {:?} to {:?}",
             id,
-            &first_key.raw_ref()[first_key.len().saturating_sub(6)..],
-            &last_key.raw_ref()[last_key.len().saturating_sub(6)..]
+            &first_key.key_ref()[first_key.key_len().saturating_sub(6)..],
+            &last_key.key_ref()[last_key.key_len().saturating_sub(6)..]
         );
 
         assert!(
             first_key <= last_key,
             "wrong key order when building sstable! sst_id = {:?}, \nfirst_key: {:?}, \nlast_key: {:?}\n",
-            id, &first_key.raw_ref()[first_key.len().saturating_sub(6)..] , &last_key.raw_ref()[last_key.len().saturating_sub(6)..]
+            id, &first_key.key_ref()[first_key.key_len().saturating_sub(6)..] , &last_key.key_ref()[last_key.key_len().saturating_sub(6)..]
         );
 
         Ok(SsTable {

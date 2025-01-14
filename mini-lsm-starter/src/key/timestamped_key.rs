@@ -74,6 +74,10 @@ impl Key<Vec<u8>> {
         self.0.as_ref()
     }
 
+    pub fn ts(&self) -> u64 {
+        self.1
+    }
+
     pub fn for_testing_key_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
@@ -98,6 +102,10 @@ impl Key<Bytes> {
         self.0.as_ref()
     }
 
+pub fn ts(&self) -> u64 {
+        self.1
+    }
+
     pub fn for_testing_from_bytes_no_ts(bytes: Bytes) -> KeyBytes {
         TimeStampKey(bytes, u64::default())
     }
@@ -120,6 +128,10 @@ impl<'a> Key<&'a [u8]> {
     /// Always use `raw_ref` to access the key in week 1 + 2. This function will be removed in week 3.
     pub fn key_ref(self) -> &'a [u8] {
         self.0
+    }
+
+    pub fn ts(&self) -> u64 {
+        self.1
     }
 
     pub fn for_testing_key_ref(self) -> &'a [u8] {
