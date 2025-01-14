@@ -44,14 +44,14 @@ impl BlockBuilder {
 
     /// Adds a key-value pair to the block. Returns false when the block is full.
     #[must_use]
-    pub fn add(&mut self, key: KeySlice, value: &[u8]) -> bool {
+    pub fn add(&mut self, key: KeySlice, value: &[u8], ts: u64) -> bool {
         if key.is_empty() {
             println!("block build try to add empty key");
             return false;
         }
 
         // key_len + value_len + offset_len
-        let add_size = key.len() + value.len() + SIZEOF_U16 * 3;
+        let add_size = key.raw_len() + value.len() + SIZEOF_U16 * 3;
         let cur_size = self.estimated_size();
 
         // if empty sapce is not enough //TODO: why allow insert large k-v pairs when self.is_empty()?
@@ -59,14 +59,17 @@ impl BlockBuilder {
             return false;
         }
 
-        let key_overlap_len = compute_key_overlap(self.first_key.raw_ref(), key.into_inner());
-        let res_len = key.len() - key_overlap_len;
+        // key_overlap_len (u16) | remaining_key_len (u16) | key (remaining_key_len) | timestamp (u64)
+
+        let key_overlap_len = compute_key_overlap(self.first_key.key_ref(), key.into_inner());
+        let res_len = key.key_len() - key_overlap_len;
         let res_key = &key.into_inner()[key_overlap_len..];
 
         self.offsets.push(self.data.len() as u16);
         self.data.put_u16(key_overlap_len as u16);
         self.data.put_u16(res_len as u16);
         self.data.put(res_key);
+        self.data.put_u64(ts);
         self.data.put_u16(value.len() as u16);
         self.data.put(value);
 

@@ -21,20 +21,22 @@ pub struct BlockIterator {
 }
 
 impl Block {
-    fn get_first_key(&self) -> Vec<u8> {
+    fn get_first_key(&self) -> (Vec<u8>, u64){
         let mut buf = &self.data[..];
 
         buf.get_u16(); // jump the key_overlap_len
         let key_len = buf.get_u16() as usize;
         let key = &buf[..key_len];
-        key.to_vec()
+        let ts = buf.get_u64();
+        (key.to_vec(),ts)
     }
 }
 
 impl BlockIterator {
     fn new(block: Arc<Block>) -> Self {
+        let (key_byte, ts) = block.get_first_key();
         Self {
-            first_key: KeyVec::from_vec(block.get_first_key()),
+            first_key: KeyVec::from_vec_with_ts(key_byte, ts),
             block,
             key: KeyVec::new(),
             value_range: (0, 0),
@@ -99,7 +101,7 @@ impl BlockIterator {
         entry.advance(res_len);
         self.key.clear();
         self.key
-            .append(&self.first_key.raw_ref()[..key_overlap_len]);
+            .append(&self.first_key.key_ref()[..key_overlap_len]);
         self.key.append(key);
 
         let value_len = entry.get_u16() as usize;
