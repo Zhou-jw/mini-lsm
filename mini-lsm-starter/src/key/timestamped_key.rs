@@ -2,7 +2,7 @@ use std::{cmp::Reverse, fmt::Debug};
 
 use bytes::Bytes;
 
-pub(super) const TS_ENABLED: bool = false;
+pub(super) const TS_ENABLED: bool = true;
 
 pub struct TimeStampKey<T: AsRef<[u8]>>(T /* user key */, u64 /* timestamp */);
 
@@ -10,6 +10,10 @@ pub(super) type Key<T> = TimeStampKey<T>;
 pub(super) type KeySlice<'a> = Key<&'a [u8]>;
 pub(super) type KeyVec = Key<Vec<u8>>;
 pub(super) type KeyBytes = Key<Bytes>;
+
+pub const TS_DEFAULT: u64 = 0;
+pub const TS_MAX: u64 = std::u64::MAX;
+pub const TS_MIN: u64 = std::u64::MIN;
 
 impl<T: AsRef<[u8]>> Key<T> {
     pub fn into_inner(self) -> T {
@@ -102,7 +106,7 @@ impl Key<Bytes> {
         self.0.as_ref()
     }
 
-pub fn ts(&self) -> u64 {
+    pub fn ts(&self) -> u64 {
         self.1
     }
 
@@ -183,6 +187,6 @@ impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for Key<T> {
 
 impl<T: AsRef<[u8]> + Ord> Ord for Key<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
+        (self.0.as_ref(), Reverse(self.1)).cmp(&(other.0.as_ref(), Reverse(other.1)))
     }
 }

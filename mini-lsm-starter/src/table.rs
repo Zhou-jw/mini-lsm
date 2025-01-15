@@ -18,6 +18,7 @@ use crate::lsm_storage::BlockCache;
 use self::bloom::Bloom;
 
 pub(crate) const SIZEOF_U32: usize = std::mem::size_of::<u32>();
+pub(crate) const SIZEOF_U64: usize = std::mem::size_of::<u64>();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockMeta {
@@ -45,6 +46,7 @@ impl BlockMeta {
     ) {
         let original_len = buf.len();
         let mut estimated_size = 0;
+        estimated_size += SIZEOF_U32; // size of meta_num
         for meta in block_meta {
             estimated_size += SIZEOF_U32;
             estimated_size += SIZEOF_U16;
