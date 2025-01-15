@@ -8,7 +8,7 @@ use crate::{
         concat_iterator::SstConcatIterator, merge_iterator::MergeIterator,
         two_merge_iterator::TwoMergeIterator, StorageIterator,
     },
-    key::KeySlice,
+    key::{KeySlice, TS_MAX, TS_MIN},
     mem_table::MemTableIterator,
     table::SsTableIterator,
 };
@@ -56,10 +56,11 @@ impl LsmIterator {
 
         match self.end_bound.as_ref() {
             Bound::Included(x) => {
-                self.is_valid = self.inner.key() <= KeySlice::from_slice(x.as_ref());
+                self.is_valid =
+                    self.inner.key() <= KeySlice::from_slice_with_ts(x.as_ref(), TS_MIN);
             }
             Bound::Excluded(x) => {
-                self.is_valid = self.inner.key() < KeySlice::from_slice(x.as_ref());
+                self.is_valid = self.inner.key() < KeySlice::from_slice_with_ts(x.as_ref(), TS_MAX);
             }
             Bound::Unbounded => {}
         }
