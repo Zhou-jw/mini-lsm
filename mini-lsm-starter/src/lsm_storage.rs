@@ -474,6 +474,10 @@ impl LsmStorageInner {
         compaction_filters.push(compaction_filter);
     }
 
+    pub fn mvcc(&self) -> &LsmMvccInner{
+        self.mvcc.as_ref().unwrap()
+    }
+
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
         let snapshot;
@@ -572,6 +576,8 @@ impl LsmStorageInner {
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
     pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
+        self.mvcc().write_lock.lock();
+        let ts = self.mvcc().latest_commit_ts() + 1;
         for record in batch {
             match record {
                 WriteBatchRecord::Put(key, value) => {
@@ -579,10 +585,11 @@ impl LsmStorageInner {
                     let value = value.as_ref();
                     assert!(!key.is_empty(), "key can not be empty");
                     assert!(!value.is_empty(), "value can not be empty");
+                    let key_slice = KeySlice::from_slice_with_ts(key, ts);
                     let size;
                     {
                         let storage_guard = self.state.read();
-                        storage_guard.memtable.put(key, value)?;
+                        storage_guard.memtable.put(key_slice, value)?;
                         size = storage_guard.memtable.approximate_size();
                     }
 
@@ -591,15 +598,17 @@ impl LsmStorageInner {
                 WriteBatchRecord::Del(key) => {
                     let key = key.as_ref();
                     assert!(!key.is_empty(), "key can not be empty");
+                    let key_slice = KeySlice::from_slice_with_ts(key, ts);
                     let size = {
                         let state_guard = self.state.read();
-                        state_guard.memtable.put(key, b"")?;
+                        state_guard.memtable.put(key_slice, b"")?;
                         state_guard.memtable.approximate_size()
                     };
                     self.try_freeze(size)?;
                 }
             }
         }
+        self.mvcc().update_commit_ts(ts);
         Ok(())
     }
 

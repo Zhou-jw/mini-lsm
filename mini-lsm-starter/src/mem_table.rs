@@ -83,7 +83,7 @@ impl MemTable {
         let wal = Wal::recover(path, &map)?;
         let mut inc_sizes = 0;
         for entry in map.iter() {
-            inc_sizes += entry.key().len() + entry.value().len();
+            inc_sizes += entry.key().raw_len() + entry.value().len();
         }
         Ok(Self {
             map,
