@@ -92,12 +92,15 @@ impl Key<Vec<u8>> {
 }
 
 impl Key<Bytes> {
+    pub fn new() -> KeyBytes {
+        Self(Bytes::new(), TS_DEFAULT)
+    }
     pub fn as_key_slice(&self) -> KeySlice {
         TimeStampKey(&self.0, self.1)
     }
 
     /// Create a `KeyBytes` from a `Bytes`. Will be removed in week 3.
-    pub fn from_bytes(bytes: Bytes, ts: u64) -> KeyBytes {
+    pub fn from_bytes_with_ts(bytes: Bytes, ts: u64) -> KeyBytes {
         TimeStampKey(bytes, ts)
     }
 

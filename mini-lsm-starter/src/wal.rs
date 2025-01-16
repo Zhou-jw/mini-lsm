@@ -10,6 +10,8 @@ use crossbeam_skiplist::SkipMap;
 use parking_lot::Mutex;
 
 use crate::block::SIZEOF_U16;
+use crate::key::{KeyBytes, KeySlice};
+use crate::table::{SIZEOF_U32, SIZEOF_U64};
 
 pub struct Wal {
     file: Arc<Mutex<BufWriter<File>>>,
@@ -29,7 +31,7 @@ impl Wal {
         })
     }
 
-    pub fn recover(path: impl AsRef<Path>, skiplist: &SkipMap<Bytes, Bytes>) -> Result<Self> {
+    pub fn recover(path: impl AsRef<Path>, skiplist: &SkipMap<KeyBytes, Bytes>) -> Result<Self> {
         let mut file = OpenOptions::new().read(true).append(true).open(path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
@@ -39,6 +41,8 @@ impl Wal {
             let key_len = rbuf.get_u16() as usize;
             let key = Bytes::copy_from_slice(&rbuf[..key_len]);
             rbuf.advance(key_len);
+            let ts = rbuf.get_u64();
+            let key_bytes = KeyBytes::from_bytes_with_ts(key, ts);
             let value_len = rbuf.get_u16() as usize;
             let value = Bytes::copy_from_slice(&rbuf[..value_len]);
             rbuf.advance(value_len);
@@ -54,7 +58,7 @@ impl Wal {
                 bail!("mismatched wsl checksum!");
             }
             pos = end + 4;
-            skiplist.insert(key, value);
+            skiplist.insert(key_bytes, value);
         }
 
         Ok(Self {
@@ -62,13 +66,15 @@ impl Wal {
         })
     }
 
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    /// | key_len (exclude ts len) (u16) | key | ts (u64) | value_len (u16) | value | checksum (u32) |
+    pub fn put(&self, key: KeySlice, value: &[u8]) -> Result<()> {
         let mut file = self.file.lock();
         let mut buf = Vec::new();
-        let estimated_size = 2 + key.len() + 2 + value.len();
+        let estimated_size = SIZEOF_U16 * 2 + key.key_len() + SIZEOF_U64 + value.len() + SIZEOF_U32;
         buf.reserve(estimated_size);
-        buf.put_u16(key.len() as u16);
-        buf.put_slice(key);
+        buf.put_u16(key.key_len() as u16);
+        buf.put_slice(key.key_ref());
+        buf.put_u64(key.ts());
         buf.put_u16(value.len() as u16);
         buf.put_slice(value);
         // let mut hasher = crc32fast::Hasher::new();
@@ -80,6 +86,11 @@ impl Wal {
 
         let checksum = crc32fast::hash(buf.as_ref());
         buf.put_u32(checksum);
+        assert_eq!(
+            estimated_size,
+            buf.len(),
+            "estimated_size != increased_size in wal put()"
+        );
 
         file.write_all(buf.as_slice())
             .context("fail to write to WAL")?;

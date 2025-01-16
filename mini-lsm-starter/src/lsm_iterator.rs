@@ -26,11 +26,11 @@ pub struct LsmIterator {
 }
 
 impl LsmIterator {
-    pub(crate) fn new(iter: LsmIteratorInner, upper: Bound<Bytes>) -> Result<Self> {
+    pub(crate) fn new(iter: LsmIteratorInner, end_bound: Bound<Bytes>) -> Result<Self> {
         let mut valid_iter = Self {
             is_valid: iter.is_valid(), //note that inner_iter may be invalid
             inner: iter,
-            end_bound: upper,
+            end_bound,
         };
         valid_iter.skip_deleted_items()?;
         Ok(valid_iter)
