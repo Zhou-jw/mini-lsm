@@ -23,6 +23,7 @@ pub struct LsmIterator {
     inner: LsmIteratorInner,
     end_bound: Bound<Bytes>,
     is_valid: bool,
+    prev_key: Vec<u8>,
 }
 
 impl LsmIterator {
@@ -31,18 +32,40 @@ impl LsmIterator {
             is_valid: iter.is_valid(), //note that inner_iter may be invalid
             inner: iter,
             end_bound,
+            prev_key: Vec::new(),
         };
-        valid_iter.skip_deleted_items()?;
+        valid_iter.move_to_next_key()?;
         Ok(valid_iter)
     }
 
-    fn skip_deleted_items(&mut self) -> Result<()> {
+    // fn skip_deleted_items(&mut self) -> Result<()> {
+    //     // while self.inner.is_valid() && self.inner.value().is_empty() {
+    //     //     self.inner.next()?;
+    //     // }
+    //     // note that even self.inner is valid, self may be invalid, we should call self.inner_next() to ensure self is valid after call next()
+    //     while self.is_valid() && self.inner.value().is_empty() {
+    //         self.inner_next()?;
+    //     }
+    //     Ok(())
+    // }
+
+    fn move_to_next_key(&mut self) -> Result<()> {
         // while self.inner.is_valid() && self.inner.value().is_empty() {
         //     self.inner.next()?;
         // }
         // note that even self.inner is valid, self may be invalid, we should call self.inner_next() to ensure self is valid after call next()
-        while self.is_valid() && self.inner.value().is_empty() {
-            self.inner_next()?;
+
+        loop {
+            while self.inner.is_valid() && self.prev_key == self.inner.key().key_ref() {
+                self.inner_next()?;
+            }
+
+            if !self.inner.is_valid() {
+                break;
+            }
+
+            self.prev_key.clear();
+            self.prev_key.extend(self.inner.key().key_ref());
         }
         Ok(())
     }
@@ -53,7 +76,7 @@ impl LsmIterator {
             self.is_valid = false;
             return Ok(());
         }
-
+        
         match self.end_bound.as_ref() {
             Bound::Included(x) => {
                 self.is_valid =
@@ -87,7 +110,7 @@ impl StorageIterator for LsmIterator {
     fn next(&mut self) -> Result<()> {
         // self.inner.next()?;
         self.inner_next()?;
-        self.skip_deleted_items()?;
+        self.move_to_next_key()?;
         Ok(())
     }
 
