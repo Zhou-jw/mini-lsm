@@ -576,7 +576,7 @@ impl LsmStorageInner {
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
     pub fn write_batch<T: AsRef<[u8]>>(&self, batch: &[WriteBatchRecord<T>]) -> Result<()> {
-        self.mvcc().write_lock.lock();
+        let _lk = self.mvcc().write_lock.lock();
         let ts = self.mvcc().latest_commit_ts() + 1;
         for record in batch {
             match record {

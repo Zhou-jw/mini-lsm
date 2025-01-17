@@ -90,8 +90,8 @@ impl BlockMeta {
             let ts_l = buf.get_u64();
             block_meta.push(BlockMeta {
                 offset: meta_offset,
-                first_key: KeyBytes::from_bytes(first_key, ts_f),
-                last_key: KeyBytes::from_bytes(last_key, ts_l),
+                first_key: KeyBytes::from_bytes_with_ts(first_key, ts_f),
+                last_key: KeyBytes::from_bytes_with_ts(last_key, ts_l),
             })
         }
         let read_meta_chksum = buf.get_u32();

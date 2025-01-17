@@ -124,18 +124,17 @@ impl LsmStorageInner {
         let block_size = self.options.block_size;
         let mut sstables = Vec::new();
         let mut sst_builder = None;
+        let mut prev_key = Vec::<u8>::new();
         while iter.is_valid() {
             if sst_builder.is_none() {
                 sst_builder = Some(SsTableBuilder::new(block_size));
             }
 
+            let is_same_as_prevkey = prev_key == iter.key().key_ref();
             let builder_inner = sst_builder.as_mut().unwrap();
+            builder_inner.add(iter.key(), iter.value());
 
-            if !iter.value().is_empty() {
-                builder_inner.add(iter.key(), iter.value());
-            }
-
-            if builder_inner.estimated_size() >= target_sst_size {
+            if builder_inner.estimated_size() >= target_sst_size && !is_same_as_prevkey{
                 let next_sst_id = self.next_sst_id();
                 let block_cache = self.block_cache.clone();
                 let builder = sst_builder.take().unwrap();
@@ -148,6 +147,11 @@ impl LsmStorageInner {
             }
 
             iter.next()?;
+
+            if !is_same_as_prevkey {
+                prev_key.clear();
+                prev_key.extend(iter.key().key_ref());
+            }
         }
 
         if let Some(builder) = sst_builder {
