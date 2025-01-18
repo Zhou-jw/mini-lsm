@@ -34,7 +34,7 @@ pub(crate) fn map_bound(bound: Bound<&[u8]>) -> Bound<Bytes> {
     }
 }
 
-pub(crate) fn map_bound_plus_ts(bound: Bound<&[u8]>, ts:u64) -> Bound<KeySlice> {
+pub(crate) fn map_bound_plus_ts(bound: Bound<&[u8]>, ts: u64) -> Bound<KeySlice> {
     match bound {
         Bound::Included(x) => Bound::Included(KeySlice::from_slice_with_ts(x, ts)),
         Bound::Excluded(x) => Bound::Excluded(KeySlice::from_slice_with_ts(x, ts)),
@@ -108,7 +108,7 @@ impl MemTable {
         upper: Bound<&[u8]>,
     ) -> MemTableIterator {
         let lower = map_bound_plus_ts(lower, TS_DEFAULT);
-        let upper= map_bound_plus_ts(upper, TS_DEFAULT);
+        let upper = map_bound_plus_ts(upper, TS_DEFAULT);
         self.scan(lower, upper)
     }
 
@@ -129,10 +129,12 @@ impl MemTable {
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, key: KeySlice, value: &[u8]) -> Result<()> {
         let inc_sizes = key.raw_len() + value.len();
+        println!("try to insert key:{:?}, ts:{:?}", key.key_ref(), key.ts());
         self.map.insert(
-            KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(&key.key_ref()), key.ts()),
+            KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(key.key_ref()), key.ts()),
             Bytes::copy_from_slice(value),
         );
+        println!("insertion done!");
         self.approximate_size
             .fetch_add(inc_sizes, std::sync::atomic::Ordering::Relaxed);
         if let Some(ref wal) = self.wal {
@@ -193,8 +195,13 @@ impl MemTable {
     }
 }
 
-type SkipMapRangeIter<'a> =
-    crossbeam_skiplist::map::Range<'a, KeyBytes, (Bound<KeyBytes>, Bound<KeyBytes>), KeyBytes, Bytes>;
+type SkipMapRangeIter<'a> = crossbeam_skiplist::map::Range<
+    'a,
+    KeyBytes,
+    (Bound<KeyBytes>, Bound<KeyBytes>),
+    KeyBytes,
+    Bytes,
+>;
 
 /// An iterator over a range of `SkipMap`. This is a self-referential structure and please refer to week 1, day 2
 /// chapter for more information.

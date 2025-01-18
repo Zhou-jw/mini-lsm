@@ -134,7 +134,7 @@ impl LsmStorageInner {
             let builder_inner = sst_builder.as_mut().unwrap();
             builder_inner.add(iter.key(), iter.value());
 
-            if builder_inner.estimated_size() >= target_sst_size && !is_same_as_prevkey{
+            if builder_inner.estimated_size() >= target_sst_size && !is_same_as_prevkey {
                 let next_sst_id = self.next_sst_id();
                 let block_cache = self.block_cache.clone();
                 let builder = sst_builder.take().unwrap();

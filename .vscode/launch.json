@@ -40,10 +40,48 @@
                 "RUSTC_TOOLCHAIN=/home/zjw/.rustup/toolchains/stable-x86_64-unknown-linux-gnu"
             ],
             "preRunCommands": [
-                "command script import ${workspaceFolder}/util/rust_prettifier_for_lldb.py",
+                "command script import ${workspaceFolder}/util/rust_prettifier_for_lldb.py"
             ],
             "args": [
                 "tests::week2_day5",
+                "--show-output"
+            ]
+        },
+        {
+            "type": "lldb-dap",
+            "request": "launch",
+            "name": "test tests::week1_day2::test_task4_integration",
+            "cwd": "${workspaceFolder}/mini-lsm-starter",
+            "program": "${workspaceFolder}/target/debug/deps/mini_lsm_starter-430c4aaead80470b",
+            "env": [
+                "RUST_BACKTRACE=short",
+                "RUSTC_TOOLCHAIN=/home/zjw/.rustup/toolchains/stable-x86_64-unknown-linux-gnu"
+            ],
+            "preRunCommands": [
+                "command script import ${workspaceFolder}/util/rust_prettifier_for_lldb.py"
+            ],
+            "args": [
+                "tests::week1_day2::test_task4_integration",
+                "--exact",
+                "--show-output"
+            ]
+        },
+        {
+            "type": "lldb-dap",
+            "request": "launch",
+            "name": "test tests::week1_day1::test_task3_freeze_on_capacity",
+            "cwd": "${workspaceFolder}/mini-lsm-starter",
+            "program": "${workspaceFolder}/target/debug/deps/mini_lsm_starter-430c4aaead80470b",
+            "env": [
+                "RUST_BACKTRACE=short",
+                "RUSTC_TOOLCHAIN=/home/zjw/.rustup/toolchains/stable-x86_64-unknown-linux-gnu"
+            ],
+            "preRunCommands": [
+                "command script import ${workspaceFolder}/util/rust_prettifier_for_lldb.py"
+            ],
+            "args": [
+                "tests::week1_day1::test_task3_freeze_on_capacity",
+                "--exact",
                 "--show-output"
             ]
         }

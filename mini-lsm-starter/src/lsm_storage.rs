@@ -456,7 +456,7 @@ impl LsmStorageInner {
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
-            mvcc: None,
+            mvcc: Some(LsmMvccInner::new(0)),
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
         };
 
@@ -474,7 +474,7 @@ impl LsmStorageInner {
         compaction_filters.push(compaction_filter);
     }
 
-    pub fn mvcc(&self) -> &LsmMvccInner{
+    pub fn mvcc(&self) -> &LsmMvccInner {
         self.mvcc.as_ref().unwrap()
     }
 
@@ -485,7 +485,7 @@ impl LsmStorageInner {
             let state_guard = self.state.read();
             snapshot = Arc::clone(&state_guard);
         }
-        
+
         //first search in mem_table
         // if let Some(bytes) = snapshot.memtable.get(key) {
         //     if bytes.is_empty() {
@@ -496,24 +496,27 @@ impl LsmStorageInner {
         // }
         let mut memtable_iters = Vec::with_capacity(snapshot.imm_memtables.len() + 1);
         memtable_iters.push(Box::new(snapshot.memtable.scan(
-            Bound::Included(KeySlice::from_slice_with_ts(key, TS_MAX)), 
-            Bound::Included(KeySlice::from_slice_with_ts(key, TS_MIN)))));
+            Bound::Included(KeySlice::from_slice_with_ts(key, TS_MAX)),
+            Bound::Included(KeySlice::from_slice_with_ts(key, TS_MIN)),
+        )));
 
         //then search in immutable mem_table
         // for imme_table in &storage_guard.imm_memtables {
         for imme_table in snapshot.imm_memtables.iter() {
-
             memtable_iters.push(Box::new(imme_table.scan(
-            Bound::Included(KeySlice::from_slice_with_ts(key, TS_MAX)), 
-            Bound::Included(KeySlice::from_slice_with_ts(key, TS_MIN)))));
+                Bound::Included(KeySlice::from_slice_with_ts(key, TS_MAX)),
+                Bound::Included(KeySlice::from_slice_with_ts(key, TS_MIN)),
+            )));
         }
 
-        let mut merge_memtb_iter = MergeIterator::create(memtable_iters);
+        let merge_memtb_iter = MergeIterator::create(memtable_iters);
         while merge_memtb_iter.is_valid() {
             if !merge_memtb_iter.value().is_empty() {
                 return Ok(Some(Bytes::copy_from_slice(merge_memtb_iter.value())));
+            } else {
+                return Ok(None);
             }
-            merge_memtb_iter.next()?;
+            // merge_memtb_iter.next()?;
         }
 
         //search in l0_Sstable
@@ -758,7 +761,7 @@ impl LsmStorageInner {
 
         let end_bound = upper;
         let lower = map_bound_plus_ts(lower, TS_DEFAULT);
-        let upper= map_bound_plus_ts(upper, TS_DEFAULT);
+        let upper = map_bound_plus_ts(upper, TS_DEFAULT);
         //create merge_mem_iters
         let mut memtable_iters = Vec::with_capacity(snapshot.imm_memtables.len() + 1);
         memtable_iters.push(Box::new(snapshot.memtable.scan(lower, upper)));
@@ -775,18 +778,10 @@ impl LsmStorageInner {
                 continue;
             }
             let iter = match lower {
-                Bound::Included(x) => SsTableIterator::create_and_seek_to_key(
-                    table,
-                    x,
-                )?,
+                Bound::Included(x) => SsTableIterator::create_and_seek_to_key(table, x)?,
                 Bound::Excluded(x) => {
-                    let mut sst_tmp_iter = SsTableIterator::create_and_seek_to_key(
-                        table,
-                        x,
-                    )?;
-                    if sst_tmp_iter.is_valid()
-                        && sst_tmp_iter.key() == x
-                    {
+                    let mut sst_tmp_iter = SsTableIterator::create_and_seek_to_key(table, x)?;
+                    if sst_tmp_iter.is_valid() && sst_tmp_iter.key() == x {
                         sst_tmp_iter.next()?;
                     }
                     sst_tmp_iter
@@ -809,18 +804,13 @@ impl LsmStorageInner {
             }
             if !li_sstables.is_empty() {
                 let iter = match lower {
-                    Bound::Included(x) => SstConcatIterator::create_and_seek_to_key(
-                        li_sstables,
-                        x,
-                    )?,
+                    Bound::Included(x) => {
+                        SstConcatIterator::create_and_seek_to_key(li_sstables, x)?
+                    }
                     Bound::Excluded(x) => {
-                        let mut sst_tmp_iter = SstConcatIterator::create_and_seek_to_key(
-                            li_sstables,
-                            x,
-                        )?;
-                        if sst_tmp_iter.is_valid()
-                            && sst_tmp_iter.key() == x
-                        {
+                        let mut sst_tmp_iter =
+                            SstConcatIterator::create_and_seek_to_key(li_sstables, x)?;
+                        if sst_tmp_iter.is_valid() && sst_tmp_iter.key() == x {
                             sst_tmp_iter.next()?;
                         }
                         sst_tmp_iter
