@@ -148,7 +148,7 @@ impl LsmStorageInner {
 
             iter.next()?;
 
-            if !is_same_as_prevkey {
+            if !is_same_as_prevkey && iter.is_valid() {
                 prev_key.clear();
                 prev_key.extend(iter.key().key_ref());
             }

@@ -12,6 +12,8 @@ pub(super) type KeyVec = Key<Vec<u8>>;
 pub(super) type KeyBytes = Key<Bytes>;
 
 pub const TS_DEFAULT: u64 = 0;
+pub const TS_RANGE_BEGIN: u64 = std::u64::MAX;
+pub const TS_RANGE_END: u64 = std::u64::MIN;
 pub const TS_MAX: u64 = std::u64::MAX;
 pub const TS_MIN: u64 = std::u64::MIN;
 
@@ -56,6 +58,11 @@ impl Key<Vec<u8>> {
     /// Append a slice to the end of the key
     pub fn append(&mut self, data: &[u8]) {
         self.0.extend(data)
+    }
+
+    /// set ts
+    pub fn set_ts(&mut self, ts: u64) {
+        self.1 = ts;
     }
 
     /// Set the key from a slice without re-allocating. The signature will change in week 3.
@@ -168,7 +175,7 @@ impl<T: AsRef<[u8]> + Default> Default for Key<T> {
 
 impl<T: AsRef<[u8]> + PartialEq> PartialEq for Key<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
+        (self.0.as_ref(), self.1).eq(&(other.0.as_ref(), other.1))
     }
 }
 

@@ -129,12 +129,10 @@ impl MemTable {
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, key: KeySlice, value: &[u8]) -> Result<()> {
         let inc_sizes = key.raw_len() + value.len();
-        println!("try to insert key:{:?}, ts:{:?}", key.key_ref(), key.ts());
         self.map.insert(
             KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(key.key_ref()), key.ts()),
             Bytes::copy_from_slice(value),
         );
-        println!("insertion done!");
         self.approximate_size
             .fetch_add(inc_sizes, std::sync::atomic::Ordering::Relaxed);
         if let Some(ref wal) = self.wal {
@@ -172,6 +170,12 @@ impl MemTable {
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
     pub fn flush(&self, builder: &mut SsTableBuilder) -> Result<()> {
         for entry in self.map.iter() {
+            // println!(
+            //     "add entry key: {:?}, ts: {:?}, value: {:?}",
+            //     entry.key().key_ref(),
+            //     entry.key().ts(),
+            //     entry.value()
+            // );
             builder.add(
                 KeySlice::from_slice_with_ts(entry.key().key_ref(), entry.key().ts()),
                 entry.value(),

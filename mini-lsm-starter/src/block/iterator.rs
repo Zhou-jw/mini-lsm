@@ -105,6 +105,7 @@ impl BlockIterator {
             .append(&self.first_key.key_ref()[..key_overlap_len]);
         self.key.append(key);
         let ts = entry.get_u64();
+        self.key.set_ts(ts);
         let value_len = entry.get_u16() as usize;
         let value_offset_begin = offset + SIZEOF_U16 * 2 + res_len + SIZEOF_U64 + SIZEOF_U16;
         let value_offset_end = value_offset_begin + value_len;
