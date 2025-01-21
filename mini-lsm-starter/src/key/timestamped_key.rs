@@ -35,7 +35,7 @@ impl<T: AsRef<[u8]>> Key<T> {
     }
 
     pub fn for_testing_ts(self) -> u64 {
-        0
+        self.1
     }
 }
 

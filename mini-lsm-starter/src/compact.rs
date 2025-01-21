@@ -357,6 +357,12 @@ impl LsmStorageInner {
         }
         snapshot.levels[0] = (1, level_1);
 
+        println!("===== After compaction =====");
+        println!("L0 : {:?}", snapshot.l0_sstables);
+        for (tier, sstables) in snapshot.levels.iter() {
+            println!("L{:?} : {:?}", tier, sstables);
+        }
+        println!();
         // lock and update LsmStorageState
         {
             let _state_lock = self.state_lock.lock();

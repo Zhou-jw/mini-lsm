@@ -542,6 +542,10 @@ impl LsmStorageInner {
             // add sst_ids in each level for the concat_iter
             let mut li_sstables = Vec::with_capacity(li_ssts_ids.len());
             for sst_id in li_ssts_ids.iter() {
+                let table = snapshot.sstables[sst_id].clone();
+                if !range_overlap(lower, upper, &table) {
+                    continue;
+                }
                 li_sstables.push(snapshot.sstables[sst_id].clone());
             }
             if !li_sstables.is_empty() {
@@ -554,7 +558,7 @@ impl LsmStorageInner {
         }
         let merge_l1_to_lmax_sst_iters = MergeIterator::create(l1_to_lmax_sst_concat_iters);
         while merge_l1_to_lmax_sst_iters.is_valid() {
-            if !merge_l0_sst_iters.value().is_empty() {
+            if !merge_l1_to_lmax_sst_iters.value().is_empty() {
                 return Ok(Some(Bytes::copy_from_slice(
                     merge_l1_to_lmax_sst_iters.value(),
                 )));
