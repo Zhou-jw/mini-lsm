@@ -63,9 +63,9 @@ impl SsTableBuilder {
         //insert kv again and update first_key and last_key
         assert!(self.builder.add(key, value));
         self.first_key.clear();
-        self.first_key.append(key.into_inner());
+        self.first_key.set_from_slice(key);
         self.last_key.clear();
-        self.last_key.append(key.into_inner());
+        self.last_key.set_from_slice(key);
     }
 
     pub fn finish_block(&mut self) {
@@ -133,10 +133,12 @@ impl SsTableBuilder {
         let first_key = self.meta.first().unwrap().first_key.clone();
         let last_key = self.meta.last().unwrap().last_key.clone();
         println!(
-            "build {:?} , key range from {:?} to {:?}",
+            "build {:?} , key range from {:?}, ts:{:?} to {:?}, ts: {:?}",
             id,
             &first_key.key_ref()[first_key.key_len().saturating_sub(6)..],
-            &last_key.key_ref()[last_key.key_len().saturating_sub(6)..]
+            first_key.ts(),
+            &last_key.key_ref()[last_key.key_len().saturating_sub(6)..],
+            last_key.ts()
         );
 
         assert!(

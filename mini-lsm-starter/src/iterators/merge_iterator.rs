@@ -94,11 +94,17 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
         while let Some(mut inner_iter) = self.iters.peek_mut() {
             //cur.1.key is the latest data, when next.1.key==cur.1.key , inner_iter should call inner_iter.next()
             // eprintln!(
-            //     "cur.1.key is {:?}, cur.1.value is {:?}",
+            //     "cur.1.key is {:?}, ts is {:?}, cur.1.value is {:?}",
             //     cur.1.key(),
+            //     cur.1.key().ts(),
             //     cur.1.value()
             // );
-            // eprintln!("inner_iter.1.key is {:?}", inner_iter.1.key());
+            // eprintln!(
+            //     "inner_iter.1.key is {:?}, ts is {:?}, inner_iter.1.value is {:?}",
+            //     inner_iter.1.key(),
+            //     inner_iter.1.key().ts(),
+            //     inner_iter.1.value()
+            // );
             // io::stdout().flush().unwrap();
             if cur.1.key() == inner_iter.1.key() {
                 /*
@@ -160,9 +166,14 @@ impl<I: 'static + for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>> StorageIt
     }
 
     fn num_active_iterators(&self) -> usize {
-        match self.current {
-            Some(_) => self.iters.len() + 1,
-            None => self.iters.len(),
-        }
+        self.iters
+            .iter()
+            .map(|x| x.1.num_active_iterators())
+            .sum::<usize>()
+            + self
+                .current
+                .as_ref()
+                .map(|x| x.1.num_active_iterators())
+                .unwrap_or(0)
     }
 }

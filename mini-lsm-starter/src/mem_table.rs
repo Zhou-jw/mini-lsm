@@ -34,7 +34,7 @@ pub(crate) fn map_bound(bound: Bound<&[u8]>) -> Bound<Bytes> {
     }
 }
 
-pub(crate) fn map_bound_plus_ts(bound: Bound<&[u8]>, ts:u64) -> Bound<KeySlice> {
+pub(crate) fn map_bound_plus_ts(bound: Bound<&[u8]>, ts: u64) -> Bound<KeySlice> {
     match bound {
         Bound::Included(x) => Bound::Included(KeySlice::from_slice_with_ts(x, ts)),
         Bound::Excluded(x) => Bound::Excluded(KeySlice::from_slice_with_ts(x, ts)),
@@ -108,7 +108,7 @@ impl MemTable {
         upper: Bound<&[u8]>,
     ) -> MemTableIterator {
         let lower = map_bound_plus_ts(lower, TS_DEFAULT);
-        let upper= map_bound_plus_ts(upper, TS_DEFAULT);
+        let upper = map_bound_plus_ts(upper, TS_DEFAULT);
         self.scan(lower, upper)
     }
 
@@ -117,7 +117,7 @@ impl MemTable {
         // this is safe because lifetime of keybytes is no longer than key: KeySlice
         let keybytes = KeyBytes::from_bytes_with_ts(
             Bytes::from_static(unsafe { std::mem::transmute(key.key_ref()) }),
-            TS_DEFAULT,
+            key.ts(),
         );
         self.map.get(&keybytes).map(|entry| entry.value().clone())
     }
@@ -129,8 +129,9 @@ impl MemTable {
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, key: KeySlice, value: &[u8]) -> Result<()> {
         let inc_sizes = key.raw_len() + value.len();
+        // assert_ne!(key.ts(), 0, "key is {:?}", key.key_ref());
         self.map.insert(
-            KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(&key.key_ref()), key.ts()),
+            KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(key.key_ref()), key.ts()),
             Bytes::copy_from_slice(value),
         );
         self.approximate_size
@@ -170,6 +171,7 @@ impl MemTable {
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
     pub fn flush(&self, builder: &mut SsTableBuilder) -> Result<()> {
         for entry in self.map.iter() {
+            // assert_ne!(entry.key().ts(), 0, "key is {:?}", entry.key());
             builder.add(
                 KeySlice::from_slice_with_ts(entry.key().key_ref(), entry.key().ts()),
                 entry.value(),
@@ -193,8 +195,13 @@ impl MemTable {
     }
 }
 
-type SkipMapRangeIter<'a> =
-    crossbeam_skiplist::map::Range<'a, KeyBytes, (Bound<KeyBytes>, Bound<KeyBytes>), KeyBytes, Bytes>;
+type SkipMapRangeIter<'a> = crossbeam_skiplist::map::Range<
+    'a,
+    KeyBytes,
+    (Bound<KeyBytes>, Bound<KeyBytes>),
+    KeyBytes,
+    Bytes,
+>;
 
 /// An iterator over a range of `SkipMap`. This is a self-referential structure and please refer to week 1, day 2
 /// chapter for more information.

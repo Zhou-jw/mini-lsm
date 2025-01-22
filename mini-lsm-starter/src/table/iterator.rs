@@ -68,9 +68,6 @@ impl SsTableIterator {
     /// this function.
     pub fn seek_to_key(&mut self, key: KeySlice) -> Result<()> {
         let mut blk_idx = self.table.find_block_idx(key);
-        if blk_idx == 25 {
-            blk_idx = self.table.find_block_idx(key);
-        }
         let mut block = self.table.read_block_cached(blk_idx)?;
         let mut blk_iter = BlockIterator::create_and_seek_to_key(block, key);
 
@@ -92,7 +89,6 @@ impl StorageIterator for SsTableIterator {
 
     /// Return the `key` that's held by the underlying block iterator.
     fn key(&self) -> KeySlice {
-        // unimplemented!()
         self.blk_iter.key()
     }
 

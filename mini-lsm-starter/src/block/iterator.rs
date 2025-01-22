@@ -105,6 +105,7 @@ impl BlockIterator {
             .append(&self.first_key.key_ref()[..key_overlap_len]);
         self.key.append(key);
         let ts = entry.get_u64();
+        self.key.set_ts(ts);
         let value_len = entry.get_u16() as usize;
         let value_offset_begin = offset + SIZEOF_U16 * 2 + res_len + SIZEOF_U64 + SIZEOF_U16;
         let value_offset_end = value_offset_begin + value_len;
@@ -128,6 +129,7 @@ impl BlockIterator {
     /// Note: You should assume the key-value pairs in the block are sorted when being added by
     /// callers.
     pub fn seek_to_key(&mut self, key: KeySlice) {
+        // if key doesn't exist, it will seek to empty key
         let mut low = 0;
         let mut high = self.block.offsets.len();
         while low < high {
@@ -143,6 +145,7 @@ impl BlockIterator {
         self.seek_to(low);
 
         // if key doesn't exist, it will seek to the last_key in this block
+        // O(n)
         // let mut offset: usize;
         // for i in 0..self.block.offsets.len() {
         //     offset = self.block.offsets[i] as usize;
