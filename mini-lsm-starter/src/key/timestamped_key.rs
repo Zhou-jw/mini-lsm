@@ -94,7 +94,7 @@ impl Key<Vec<u8>> {
     }
 
     pub fn for_testing_from_vec_no_ts(key: Vec<u8>) -> Self {
-        Self(key, u64::default())
+        Self(key, TS_DEFAULT)
     }
 }
 

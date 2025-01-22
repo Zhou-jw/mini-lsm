@@ -117,7 +117,7 @@ impl MemTable {
         // this is safe because lifetime of keybytes is no longer than key: KeySlice
         let keybytes = KeyBytes::from_bytes_with_ts(
             Bytes::from_static(unsafe { std::mem::transmute(key.key_ref()) }),
-            TS_DEFAULT,
+            key.ts(),
         );
         self.map.get(&keybytes).map(|entry| entry.value().clone())
     }
@@ -129,6 +129,7 @@ impl MemTable {
     /// In week 3, day 5, modify the function to use the batch API.
     pub fn put(&self, key: KeySlice, value: &[u8]) -> Result<()> {
         let inc_sizes = key.raw_len() + value.len();
+        // assert_ne!(key.ts(), 0, "key is {:?}", key.key_ref());
         self.map.insert(
             KeyBytes::from_bytes_with_ts(Bytes::copy_from_slice(key.key_ref()), key.ts()),
             Bytes::copy_from_slice(value),
@@ -170,12 +171,7 @@ impl MemTable {
     /// Flush the mem-table to SSTable. Implement in week 1 day 6.
     pub fn flush(&self, builder: &mut SsTableBuilder) -> Result<()> {
         for entry in self.map.iter() {
-            // println!(
-            //     "add entry key: {:?}, ts: {:?}, value: {:?}",
-            //     entry.key().key_ref(),
-            //     entry.key().ts(),
-            //     entry.value()
-            // );
+            // assert_ne!(entry.key().ts(), 0, "key is {:?}", entry.key());
             builder.add(
                 KeySlice::from_slice_with_ts(entry.key().key_ref(), entry.key().ts()),
                 entry.value(),

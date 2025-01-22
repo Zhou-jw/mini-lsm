@@ -129,6 +129,7 @@ impl BlockIterator {
     /// Note: You should assume the key-value pairs in the block are sorted when being added by
     /// callers.
     pub fn seek_to_key(&mut self, key: KeySlice) {
+        // if key doesn't exist, it will seek to empty key
         let mut low = 0;
         let mut high = self.block.offsets.len();
         while low < high {
@@ -144,6 +145,7 @@ impl BlockIterator {
         self.seek_to(low);
 
         // if key doesn't exist, it will seek to the last_key in this block
+        // O(n)
         // let mut offset: usize;
         // for i in 0..self.block.offsets.len() {
         //     offset = self.block.offsets[i] as usize;
