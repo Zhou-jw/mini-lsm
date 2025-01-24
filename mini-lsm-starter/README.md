@@ -48,7 +48,7 @@ data_ref_cloned = 5
 
 ## week1 day2
 ### self-referencing
-```
+```rust
 // https://docs.rs/ouroboros/latest/ouroboros/attr.self_referencing.html
 
 //example

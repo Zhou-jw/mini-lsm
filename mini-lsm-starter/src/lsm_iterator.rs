@@ -28,7 +28,11 @@ pub struct LsmIterator {
 }
 
 impl LsmIterator {
-    pub(crate) fn new(iter: LsmIteratorInner, end_bound: Bound<Bytes>, read_ts:u64) -> Result<Self> {
+    pub(crate) fn new(
+        iter: LsmIteratorInner,
+        end_bound: Bound<Bytes>,
+        read_ts: u64,
+    ) -> Result<Self> {
         let mut valid_iter = Self {
             is_valid: iter.is_valid(), //note that inner_iter may be invalid
             inner: iter,
@@ -58,7 +62,10 @@ impl LsmIterator {
         // note that even self.inner is valid, self may be invalid, we should call self.inner_next() to ensure self is valid after call next()
 
         loop {
-            while self.inner.is_valid() && self.prev_key == self.inner.key().key_ref() && self.inner.key().ts() > self.read_ts{
+            while self.inner.is_valid()
+                && self.prev_key == self.inner.key().key_ref()
+                && self.inner.key().ts() > self.read_ts
+            {
                 self.inner_next()?;
             }
 

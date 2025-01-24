@@ -14,7 +14,7 @@ use ouroboros::self_referencing;
 use parking_lot::Mutex;
 
 use crate::{
-    iterators::{two_merge_iterator::TwoMergeIterator, StorageIterator},
+    iterators::StorageIterator,
     lsm_iterator::{FusedIterator, LsmIterator},
     lsm_storage::LsmStorageInner,
 };
@@ -34,7 +34,11 @@ impl Transaction {
     }
 
     pub fn scan(self: &Arc<Self>, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
-        unimplemented!()
+        let iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
+        Ok(TxnIterator {
+            txn: self.clone(),
+            iter,
+        })
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) {
@@ -73,33 +77,42 @@ impl StorageIterator for TxnLocalIterator {
     type KeyType<'a> = &'a [u8];
 
     fn value(&self) -> &[u8] {
-        unimplemented!()
+        self.borrow_item().1.as_ref()
     }
 
     fn key(&self) -> &[u8] {
-        unimplemented!()
+        self.borrow_item().0.as_ref()
     }
 
     fn is_valid(&self) -> bool {
-        unimplemented!()
+        !self.borrow_item().0.is_empty()
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        self.with_mut(|field| {
+            let next_item = field
+                .iter
+                .next()
+                .map(|entry| (entry.key().clone(), entry.value().clone()));
+            *field.item = next_item.unwrap_or((Bytes::new(), Bytes::new()));
+        });
+        Ok(())
     }
 }
 
 pub struct TxnIterator {
-    _txn: Arc<Transaction>,
-    iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
+    txn: Arc<Transaction>,
+    // iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
+    iter: FusedIterator<LsmIterator>,
 }
 
 impl TxnIterator {
     pub fn create(
         txn: Arc<Transaction>,
-        iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
+        // iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
+        iter: FusedIterator<LsmIterator>,
     ) -> Result<Self> {
-        unimplemented!()
+        Ok(Self { txn, iter })
     }
 }
 
@@ -122,7 +135,7 @@ impl StorageIterator for TxnIterator {
     }
 
     fn next(&mut self) -> Result<()> {
-        unimplemented!()
+        self.iter.next()
     }
 
     fn num_active_iterators(&self) -> usize {
