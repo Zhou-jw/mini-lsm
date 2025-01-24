@@ -21,6 +21,7 @@ pub struct SsTableBuilder {
     pub(crate) meta: Vec<BlockMeta>,
     block_size: usize,
     key_hashes: Vec<u32>,
+    max_ts: u64,
 }
 
 impl SsTableBuilder {
@@ -34,6 +35,7 @@ impl SsTableBuilder {
             meta: Vec::new(),
             block_size,
             key_hashes: Vec::new(),
+            max_ts: 0,
         }
     }
 
@@ -42,6 +44,11 @@ impl SsTableBuilder {
     /// Note: You should split a new block when the current block is full.(`std::mem::replace` may
     /// be helpful here)
     pub fn add(&mut self, key: KeySlice, value: &[u8]) {
+        // if key.ts larger than sst_builder.max_ts,, update
+        if key.ts() > self.max_ts {
+            self.max_ts = key.ts();
+        }
+
         // if first_key is empty, (k, v) is the first kv pair
         if self.first_key.is_empty() {
             self.first_key.clear();
@@ -101,11 +108,11 @@ impl SsTableBuilder {
     ) -> Result<SsTable> {
         //                                 |---meta block offset
         //                                 v
-        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
-        // |         Block Section         |          Meta Section         |          Extra          |                         Bloom Filter Section                  |
-        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
-        // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) | bloom filter | k(u8) | bloom chksum | bloom block offset(u32) |
-        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+        // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        // |         Block Section         |          Meta Section         |                     Extra              |                         Bloom Filter Section                  |
+        // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        // | data block | ... | data block | meta 1 | meta 2| ... |meta n  | meta block offset (u32) |  max_ts(u64) | bloom filter | k(u8) | bloom chksum | bloom block offset(u32) |
+        // --------------------------------------------------------------------------------------------------------------------------------------------------------------------------
         if !self.builder.is_empty() {
             self.finish_block();
         }
@@ -116,6 +123,9 @@ impl SsTableBuilder {
         BlockMeta::encode_block_meta(&self.meta, &mut buf);
         // encode meta block offset
         buf.put_u32(block_meta_offset as u32);
+
+        // encode max_ts
+        buf.put_u64(self.max_ts);
 
         // build bloom filter
         let entries = self.key_hashes.len();
@@ -156,7 +166,7 @@ impl SsTableBuilder {
             block_cache,
             block_meta: self.meta,
             block_meta_offset,
-            max_ts: 0,
+            max_ts: self.max_ts,
         })
     }
 

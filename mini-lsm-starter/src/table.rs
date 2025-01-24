@@ -170,7 +170,9 @@ impl SsTable {
         let bloom = Bloom::decode(&raw_bloom_filter[..])?;
 
         //read meta section
-        let raw_meta_offset = file.read(bloom_offset - 4, 4)?;
+        let raw_max_ts = file.read(bloom_offset-8, 8)?;
+        let max_ts = (&raw_max_ts[..]).get_u64();
+        let raw_meta_offset = file.read(bloom_offset - 12, 4)?;
         let block_meta_offset = (&raw_meta_offset[..]).get_u32() as u64;
         let raw_block_meta = file.read(block_meta_offset, bloom_offset - 4 - block_meta_offset)?;
         let block_meta = BlockMeta::decode_block_meta(&raw_block_meta[..]).unwrap();
@@ -186,7 +188,7 @@ impl SsTable {
             first_key,
             last_key,
             bloom: Some(bloom),
-            max_ts: 0,
+            max_ts,
         })
     }
 
