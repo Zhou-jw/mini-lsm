@@ -358,6 +358,7 @@ impl LsmStorageInner {
         // create manifest or recover
         let manifest;
         let manifest_path = path.join("MANIFEST");
+        let mut latest_ts: u64 = 0;
         if !manifest_path.exists() {
             manifest = Manifest::create(manifest_path)?;
             if options.enable_wal {
@@ -404,6 +405,11 @@ impl LsmStorageInner {
                     let id = *id;
                     let wal_path = Self::path_of_wal_static(path, id);
                     let memtable = MemTable::recover_from_wal(id, wal_path)?;
+                    //update latest_ts
+                    if let Some(memtable_max_ts) = memtable.max_ts() {
+                        latest_ts = latest_ts.max(memtable_max_ts);
+                    }
+
                     state.imm_memtables.insert(0, Arc::new(memtable));
                 }
             } else {
@@ -425,6 +431,7 @@ impl LsmStorageInner {
                     FileObject::open(&LsmStorageInner::path_of_sst_static(path, sst_id))?,
                 )
                 .with_context(|| format!("fail to recover sstable {:?}", sst_id))?;
+                latest_ts = latest_ts.max(sst.max_ts());
                 state.sstables.insert(sst_id, Arc::new(sst));
             }
 
@@ -762,7 +769,12 @@ impl LsmStorageInner {
                 map_bound_plus_ts(upper, TS_RANGE_END),
             )));
         }
-        let merge_mem_iters = MergeIterator::create(memtable_iters);
+        let mut merge_mem_iters = MergeIterator::create(memtable_iters);
+        if let Bound::Excluded(x) = lower {
+            while merge_mem_iters.is_valid() && merge_mem_iters.key().key_ref() == x {
+                merge_mem_iters.next()?;
+            }
+        }
 
         //create merge_l0_sst_iters
         let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());

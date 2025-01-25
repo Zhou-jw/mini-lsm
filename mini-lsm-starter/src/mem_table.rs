@@ -93,6 +93,10 @@ impl MemTable {
         })
     }
 
+    /// return the max_ts of all k-v
+    pub fn max_ts(&self) -> Option<u64> {
+        self.map.iter().map(|entry| entry.key().ts()).max()
+    }
     pub fn for_testing_put_slice(&self, key: &[u8], value: &[u8]) -> Result<()> {
         self.put(KeySlice::for_testing_from_slice_no_ts(key), value)
     }
