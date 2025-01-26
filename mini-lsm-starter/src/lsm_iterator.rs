@@ -8,7 +8,7 @@ use crate::{
         concat_iterator::SstConcatIterator, merge_iterator::MergeIterator,
         two_merge_iterator::TwoMergeIterator, StorageIterator,
     },
-    key::{KeySlice, TS_MAX, TS_MIN},
+    key::{KeySlice, TS_RANGE_BEGIN, TS_RANGE_END},
     mem_table::MemTableIterator,
     table::SsTableIterator,
 };
@@ -62,10 +62,8 @@ impl LsmIterator {
         // note that even self.inner is valid, self may be invalid, we should call self.inner_next() to ensure self is valid after call next()
 
         loop {
-            while self.inner.is_valid()
-                && self.prev_key == self.inner.key().key_ref()
-                && self.inner.key().ts() > self.read_ts
-            {
+            // skip deleted items and items with the same key as prev_key
+            while self.inner.is_valid() && self.prev_key == self.inner.key().key_ref() {
                 self.inner_next()?;
             }
 
@@ -75,6 +73,14 @@ impl LsmIterator {
 
             self.prev_key.clear();
             self.prev_key.extend(self.inner.key().key_ref());
+
+            // skip items with larger (later) timestamp than read_ts
+            while self.inner.is_valid()
+                && self.prev_key == self.inner.key().key_ref()
+                && self.inner.key().ts() > self.read_ts
+            {
+                self.inner_next()?;
+            }
 
             if !self.inner.value().is_empty() {
                 break;
@@ -93,10 +99,11 @@ impl LsmIterator {
         match self.end_bound.as_ref() {
             Bound::Included(x) => {
                 self.is_valid =
-                    self.inner.key() <= KeySlice::from_slice_with_ts(x.as_ref(), TS_MIN);
+                    self.inner.key() <= KeySlice::from_slice_with_ts(x.as_ref(), TS_RANGE_END);
             }
             Bound::Excluded(x) => {
-                self.is_valid = self.inner.key() < KeySlice::from_slice_with_ts(x.as_ref(), TS_MAX);
+                self.is_valid =
+                    self.inner.key() < KeySlice::from_slice_with_ts(x.as_ref(), TS_RANGE_BEGIN);
             }
             Bound::Unbounded => {}
         }
