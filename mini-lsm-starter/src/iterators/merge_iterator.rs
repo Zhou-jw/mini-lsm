@@ -54,14 +54,14 @@ impl<I: StorageIterator> MergeIterator<I> {
             };
         }
 
-        let mut heap_inner= BinaryHeap::new();
+        let mut heap_inner = BinaryHeap::new();
         if iters.iter().all(|x| !x.is_valid()) {
             // All invalid, select the last one of Vec<I> as current
             let mut iters = iters;
             return Self {
                 iters: heap_inner,
                 current: Some(HeapWrapper(0, iters.pop().unwrap())),
-            }
+            };
         }
 
         for (idx, iter) in iters.into_iter().enumerate() {

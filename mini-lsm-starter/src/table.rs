@@ -35,7 +35,7 @@ impl BlockMeta {
     /// You may add extra fields to the buffer,
     /// in order to help keep track of `first_key` when decoding from the same buffer in the future.
     /// -----------------------------------------------------------------------------------------------------------------
-    /// |                                         Meta                                                 | ... |          |
+    /// |                                         Meta#1                                               | ... |          |
     /// -----------------------------------------------------------------------------------------------------------------
     /// | meta_bum | block_offset(u32) | first_key_len(u16) | first_key | last_key_len(u16) | last_key | ... | checksum |
     /// -----------------------------------------------------------------------------------------------------------------
@@ -170,11 +170,21 @@ impl SsTable {
         let bloom = Bloom::decode(&raw_bloom_filter[..])?;
 
         //read meta section
-        let raw_max_ts = file.read(bloom_offset-8, 8)?;
+        let meta_extra_len = (SIZEOF_U64 + SIZEOF_U32) as u64;
+        let raw_max_ts = file.read(
+            bloom_offset - SIZEOF_U64/* max_tx */ as u64,
+            SIZEOF_U64 as u64,
+        )?;
         let max_ts = (&raw_max_ts[..]).get_u64();
-        let raw_meta_offset = file.read(bloom_offset - 12, 4)?;
+        let raw_meta_offset = file.read(
+            bloom_offset - meta_extra_len, /* meta_offset + max_tx */
+            SIZEOF_U32 as u64,
+        )?;
         let block_meta_offset = (&raw_meta_offset[..]).get_u32() as u64;
-        let raw_block_meta = file.read(block_meta_offset, bloom_offset - 4 - block_meta_offset)?;
+        let raw_block_meta = file.read(
+            block_meta_offset,
+            bloom_offset - block_meta_offset - meta_extra_len, /* meta_section_len */
+        )?;
         let block_meta = BlockMeta::decode_block_meta(&raw_block_meta[..]).unwrap();
         let first_key = block_meta.first().unwrap().first_key.clone();
         let last_key = block_meta.last().unwrap().last_key.clone();

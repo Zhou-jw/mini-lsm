@@ -52,10 +52,10 @@ impl Wal {
             // hasher.write_u16(value_len as u16);
             // hasher.write(value.as_ref());
             // let checksum = hasher.finalize();
-            let end = pos + 2 * SIZEOF_U16 + key_len + value_len;
+            let end = pos + 2 * SIZEOF_U16 + key_len + SIZEOF_U64 + value_len;
             let checksum = crc32fast::hash(&buf[pos..end]);
             if checksum != rbuf.get_u32() {
-                bail!("mismatched wsl checksum!");
+                bail!("mismatched wal checksum!");
             }
             pos = end + 4;
             skiplist.insert(key_bytes, value);
