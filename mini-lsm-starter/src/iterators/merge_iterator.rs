@@ -47,24 +47,32 @@ pub struct MergeIterator<I: StorageIterator> {
 
 impl<I: StorageIterator> MergeIterator<I> {
     pub fn create(iters: Vec<Box<I>>) -> Self {
-        if iters.iter().all(|x| !x.is_valid()) {
+        if iters.is_empty() {
             return Self {
                 iters: BinaryHeap::new(),
                 current: None,
             };
         }
 
-        let mut self_iters = BinaryHeap::new();
-        for (idx, iter) in iters.into_iter().enumerate() {
-            if iter.is_valid() {
-                self_iters.push(HeapWrapper(idx, iter));
+        let mut heap_inner= BinaryHeap::new();
+        if iters.iter().all(|x| !x.is_valid()) {
+            // All invalid, select the last one of Vec<I> as current
+            let mut iters = iters;
+            return Self {
+                iters: heap_inner,
+                current: Some(HeapWrapper(0, iters.pop().unwrap())),
             }
         }
 
-        let cur = self_iters.pop();
+        for (idx, iter) in iters.into_iter().enumerate() {
+            if iter.is_valid() {
+                heap_inner.push(HeapWrapper(idx, iter));
+            }
+        }
+
         Self {
-            iters: self_iters,
-            current: cur,
+            current: heap_inner.pop(),
+            iters: heap_inner,
         }
     }
 }
