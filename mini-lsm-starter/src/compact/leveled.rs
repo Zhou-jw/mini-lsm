@@ -260,8 +260,9 @@ impl LeveledCompactionController {
                 .1
                 .iter()
                 .copied()
-                .filter(|x| !upper_level_sst_ids_set.remove(x))
+                .filter(|x| !lower_level_sst_ids_set.remove(x))
                 .collect::<Vec<_>>();
+            assert!(lower_level_sst_ids_set.is_empty());
             new_lower_sstables.extend(output.iter());
         }
         new_state.levels[lower_l - 1] = (task.lower_level, new_lower_sstables);
