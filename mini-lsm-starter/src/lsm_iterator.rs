@@ -63,6 +63,7 @@ impl LsmIterator {
 
         loop {
             // skip deleted items and items with the same key as prev_key
+            // skip timestamp larger than read_ts later, or we may enter a deadloop
             while self.inner.is_valid() && self.prev_key == self.inner.key().key_ref() {
                 self.inner_next()?;
             }
@@ -80,6 +81,11 @@ impl LsmIterator {
                 && self.inner.key().ts() > self.read_ts
             {
                 self.inner_next()?;
+            }
+
+            // after call of self.inner_next(), self.inner may be invalid, so we should check once call self.inner_next()
+            if !self.inner.is_valid() {
+                break;
             }
 
             if !self.inner.value().is_empty() {
