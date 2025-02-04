@@ -444,13 +444,14 @@ impl LsmStorageInner {
                             .cmp(state.sstables[b].first_key())
                     });
                 }
-                println!("===== After recovery =====");
-                println!("L0 = {:?}", state.l0_sstables);
-                for i in state.levels.iter() {
-                    println!("L{:?} = {:?}", i.0, i.1);
-                }
-                println!();
             }
+            println!("===== After recovery =====");
+            println!("{:?} WALs recovered", state.imm_memtables.len() + 1);
+            println!("L0 = {:?}", state.l0_sstables);
+            for i in state.levels.iter() {
+                println!("L{:?} = {:?}", i.0, i.1);
+            }
+            println!();
         }
 
         let storage = Self {
@@ -462,7 +463,7 @@ impl LsmStorageInner {
             compaction_controller,
             manifest: Some(manifest),
             options: options.into(),
-            mvcc: Some(LsmMvccInner::new(0)),
+            mvcc: Some(LsmMvccInner::new(latest_ts)),
             compaction_filters: Arc::new(Mutex::new(Vec::new())),
         };
 
@@ -484,8 +485,7 @@ impl LsmStorageInner {
         self.mvcc.as_ref().unwrap()
     }
 
-    /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
-    pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+    pub fn get_with_ts(&self, key: &[u8], read_ts: u64) -> Result<Option<Bytes>> {
         let snapshot;
         {
             let state_guard = self.state.read();
@@ -504,14 +504,14 @@ impl LsmStorageInner {
             memtable_iters.push(Box::new(imme_table.scan(lower, upper)));
         }
         let merge_memtb_iter = MergeIterator::create(memtable_iters);
-        while merge_memtb_iter.is_valid() {
-            if !merge_memtb_iter.value().is_empty() {
-                return Ok(Some(Bytes::copy_from_slice(merge_memtb_iter.value())));
-            } else {
-                return Ok(None);
-            }
-            // merge_memtb_iter.next()?;
-        }
+        // while merge_memtb_iter.is_valid() {
+        //     if !merge_memtb_iter.value().is_empty() {
+        //         return Ok(Some(Bytes::copy_from_slice(merge_memtb_iter.value())));
+        //     } else {
+        //         return Ok(None);
+        //     }
+        //     // merge_memtb_iter.next()?;
+        // }
 
         //search in l0_Sstable
         let mut sst_iters = Vec::with_capacity(snapshot.l0_sstables.len());
@@ -532,13 +532,13 @@ impl LsmStorageInner {
             sst_iters.push(Box::new(iter));
         }
         let merge_l0_sst_iters = MergeIterator::create(sst_iters);
-        while merge_l0_sst_iters.is_valid() {
-            if !merge_l0_sst_iters.value().is_empty() {
-                return Ok(Some(Bytes::copy_from_slice(merge_l0_sst_iters.value())));
-            } else {
-                return Ok(None);
-            }
-        }
+        // while merge_l0_sst_iters.is_valid() {
+        //     if !merge_l0_sst_iters.value().is_empty() {
+        //         return Ok(Some(Bytes::copy_from_slice(merge_l0_sst_iters.value())));
+        //     } else {
+        //         return Ok(None);
+        //     }
+        // }
 
         // create l1-lmax_sst_iter
         let mut l1_to_lmax_sst_concat_iters = Vec::with_capacity(snapshot.levels.len());
@@ -561,16 +561,33 @@ impl LsmStorageInner {
             }
         }
         let merge_l1_to_lmax_sst_iters = MergeIterator::create(l1_to_lmax_sst_concat_iters);
-        while merge_l1_to_lmax_sst_iters.is_valid() {
-            if !merge_l1_to_lmax_sst_iters.value().is_empty() {
-                return Ok(Some(Bytes::copy_from_slice(
-                    merge_l1_to_lmax_sst_iters.value(),
-                )));
-            } else {
-                return Ok(None);
-            }
+        // while merge_l1_to_lmax_sst_iters.is_valid() {
+        //     if !merge_l1_to_lmax_sst_iters.value().is_empty() {
+        //         return Ok(Some(Bytes::copy_from_slice(
+        //             merge_l1_to_lmax_sst_iters.value(),
+        //         )));
+        //     } else {
+        //         return Ok(None);
+        //     }
+        // }
+        let iter = TwoMergeIterator::create(merge_memtb_iter, merge_l0_sst_iters)?;
+        let iter = TwoMergeIterator::create(iter, merge_l1_to_lmax_sst_iters)?;
+        let iter = LsmIterator::new(iter, map_bound(Bound::Included(key)), read_ts)?;
+        // while iter.is_valid() {
+        //     if !iter.value().is_empty() {
+        //         return Ok(Some(Bytes::copy_from_slice(iter.value())));
+        //     }
+        // }
+        if iter.is_valid() && !iter.value().is_empty() {
+            return Ok(Some(Bytes::copy_from_slice(iter.value())));
         }
         Ok(None)
+    }
+
+    /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
+    pub fn get(self: &Arc<Self>, key: &[u8]) -> Result<Option<Bytes>> {
+        let new_txn = self.new_txn()?;
+        new_txn.get(key)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.

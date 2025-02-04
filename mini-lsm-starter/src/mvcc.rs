@@ -58,8 +58,8 @@ impl LsmMvccInner {
     pub fn new_txn(&self, inner: Arc<LsmStorageInner>, serializable: bool) -> Arc<Transaction> {
         let read_ts = self.ts.lock().0;
         Arc::new(Transaction {
-            read_ts: read_ts,
-            inner: inner,
+            read_ts,
+            inner,
             local_storage: Arc::new(SkipMap::new()),
             committed: Arc::new(AtomicBool::new(false)),
             key_hashes: None,

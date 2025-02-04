@@ -98,11 +98,9 @@ where
         assert_eq!(
             k,
             iter.key().for_testing_key_ref(),
-            "expected key: {:?}, actual key: {:?}, expected value: {:?}, actual value: {:?}",
+            "expected key: {:?}, actual key: {:?}",
             k,
             as_bytes(iter.key().for_testing_key_ref()),
-            v,
-            as_bytes(iter.value()),
         );
         assert_eq!(
             v,
@@ -264,12 +262,7 @@ pub fn compaction_bench(storage: Arc<MiniLsm>) {
         let value = storage.get(key.as_bytes()).unwrap();
         if let Some(val) = key_map.get(&i) {
             let expected_value = gen_value(*val);
-            assert_eq!(
-                value,
-                Some(Bytes::from(expected_value.clone())),
-                "key is {:?}",
-                key
-            );
+            assert_eq!(value, Some(Bytes::from(expected_value.clone())));
             expected_key_value_pairs.push((Bytes::from(key), Bytes::from(expected_value)));
         } else {
             assert!(value.is_none());

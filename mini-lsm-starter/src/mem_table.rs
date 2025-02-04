@@ -120,7 +120,7 @@ impl MemTable {
     pub fn get(&self, key: KeySlice) -> Option<Bytes> {
         // this is safe because lifetime of keybytes is no longer than key: KeySlice
         let keybytes = KeyBytes::from_bytes_with_ts(
-            Bytes::from_static(unsafe { std::mem::transmute(key.key_ref()) }),
+            Bytes::from_static(unsafe { std::mem::transmute::<&[u8], &[u8]>(key.key_ref()) }),
             key.ts(),
         );
         self.map.get(&keybytes).map(|entry| entry.value().clone())
