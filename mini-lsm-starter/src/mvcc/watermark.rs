@@ -27,11 +27,10 @@ impl Watermark {
     }
 
     pub fn watermark(&self) -> Option<u64> {
-        if let Some(min_ts) = self.readers.keys().next() {
-            return Some(*min_ts);
-        }
-        else {
-            return None;
-        }
+        self.readers.first_key_value().map(|ts| *ts.0)
+    }
+
+    pub fn num_retained_snapshots(&self) -> usize {
+        self.readers.len()
     }
 }

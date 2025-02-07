@@ -118,10 +118,12 @@ impl LsmStorageInner {
         &self,
         mut iter: impl for<'a> StorageIterator<KeyType<'a> = KeySlice<'a>>,
     ) -> Result<Vec<Arc<SsTable>>> {
-        // if lots of the same keys exist, simply retain the latest one.
-        // if the latest version is a delete marker, we do not need to keep it in the produced SST files.
+        // If a version of a key is above watermark, keep it.
+        // For all versions of a key below or equal to the watermark, keep the latest version.
         let target_sst_size = self.options.target_sst_size;
         let block_size = self.options.block_size;
+        let min_ts = self.mvcc().watermark();
+
         let mut sstables = Vec::new();
         let mut sst_builder = None;
         let mut prev_key = Vec::<u8>::new();
@@ -132,6 +134,33 @@ impl LsmStorageInner {
 
             let is_same_as_prevkey = prev_key == iter.key().key_ref();
             let builder_inner = sst_builder.as_mut().unwrap();
+
+            if is_same_as_prevkey && iter.key().ts() < min_ts {
+                println!(
+                    "prev_key: {:?}, iter.key(): {:?}, ts: {:?}, min_ts: {:?}",
+                    prev_key,
+                    iter.key(),
+                    iter.key().ts(),
+                    min_ts
+                );
+                iter.next()?;
+                continue;
+            }
+
+            if !is_same_as_prevkey && iter.key().ts() <= min_ts && iter.value().is_empty() {
+                println!(
+                    "delete key: {:?}, value: {:?}, ts: {:?}, min_ts: {:?}",
+                    iter.key(),
+                    iter.value(),
+                    iter.key().ts(),
+                    min_ts
+                );
+                prev_key.clear();
+                prev_key.extend(iter.key().key_ref());
+                iter.next()?;
+                continue;
+            }
+
             builder_inner.add(iter.key(), iter.value());
 
             if builder_inner.estimated_size() >= target_sst_size && !is_same_as_prevkey {
@@ -146,12 +175,11 @@ impl LsmStorageInner {
                 )?));
             }
 
-            iter.next()?;
-
-            if !is_same_as_prevkey && iter.is_valid() {
+            if !is_same_as_prevkey {
                 prev_key.clear();
                 prev_key.extend(iter.key().key_ref());
             }
+            iter.next()?;
         }
 
         if let Some(builder) = sst_builder {
