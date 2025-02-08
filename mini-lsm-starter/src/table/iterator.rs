@@ -53,9 +53,16 @@ impl SsTableIterator {
 
     /// Create a new iterator and seek to the first key-value pair which >= `key`.
     pub fn create_and_seek_to_key(table: Arc<SsTable>, key: KeySlice) -> Result<Self> {
-        let blk_idx = table.find_block_idx(key);
+        let mut blk_idx = table.find_block_idx(key);
         let block = table.read_block_cached(blk_idx)?;
-        let block_iter = BlockIterator::create_and_seek_to_key(block, key);
+        let mut block_iter = BlockIterator::create_and_seek_to_key(block, key);
+        if !block_iter.is_valid() {
+            blk_idx += 1;
+            if blk_idx < table.num_of_blocks() {
+                block_iter =
+                    BlockIterator::create_and_seek_to_key(table.read_block_cached(blk_idx)?, key);
+            }
+        }
         Ok(Self {
             table,
             blk_iter: block_iter,

@@ -34,3 +34,9 @@ impl Watermark {
         self.readers.len()
     }
 }
+
+impl Default for Watermark {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -136,25 +136,25 @@ impl LsmStorageInner {
             let builder_inner = sst_builder.as_mut().unwrap();
 
             if is_same_as_prevkey && iter.key().ts() < min_ts {
-                println!(
-                    "prev_key: {:?}, iter.key(): {:?}, ts: {:?}, min_ts: {:?}",
-                    prev_key,
-                    iter.key(),
-                    iter.key().ts(),
-                    min_ts
-                );
+                // println!(
+                //     "prev_key: {:?}, iter.key(): {:?}, ts: {:?}, min_ts: {:?}",
+                //     prev_key,
+                //     iter.key(),
+                //     iter.key().ts(),
+                //     min_ts
+                // );
                 iter.next()?;
                 continue;
             }
 
             if !is_same_as_prevkey && iter.key().ts() <= min_ts && iter.value().is_empty() {
-                println!(
-                    "delete key: {:?}, value: {:?}, ts: {:?}, min_ts: {:?}",
-                    iter.key(),
-                    iter.value(),
-                    iter.key().ts(),
-                    min_ts
-                );
+                // println!(
+                //     "delete key: {:?}, value: {:?}, ts: {:?}, min_ts: {:?}",
+                //     iter.key(),
+                //     iter.value(),
+                //     iter.key().ts(),
+                //     min_ts
+                // );
                 prev_key.clear();
                 prev_key.extend(iter.key().key_ref());
                 iter.next()?;
