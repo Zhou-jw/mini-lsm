@@ -160,7 +160,6 @@ impl MemTable {
 
     /// Get an iterator over a range of keys.
     pub fn scan(&self, lower: Bound<KeySlice>, upper: Bound<KeySlice>) -> MemTableIterator {
-        // unimplemented!()
         let (lower, upper) = (map_key_bound(lower), map_key_bound(upper));
         let mut mem_iter = MemTableIteratorBuilder {
             map: self.map.clone(),

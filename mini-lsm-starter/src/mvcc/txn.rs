@@ -8,15 +8,15 @@ use std::{
 };
 
 use anyhow::Result;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
 use parking_lot::Mutex;
 
 use crate::{
-    iterators::StorageIterator,
+    iterators::{two_merge_iterator::TwoMergeIterator, StorageIterator},
     lsm_iterator::{FusedIterator, LsmIterator},
-    lsm_storage::LsmStorageInner,
+    lsm_storage::LsmStorageInner, mem_table::map_bound,
 };
 
 pub struct Transaction {
@@ -30,11 +30,24 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        // first probe the local_sotrage
+        if let Some(entry) = self.local_storage.get(key) {
+            return Ok(Some(entry.value().clone()));
+        }
         self.inner.get_with_ts(key, self.read_ts)
     }
 
     pub fn scan(self: &Arc<Self>, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
-        let iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
+        let mut local_iter = TxnLocalIteratorBuilder {
+            map: self.local_storage.clone(),
+            iter_builder: |map| map.range((map_bound(lower), map_bound(upper))),
+            item: (Bytes::new(), Bytes::new()),
+        }.build();
+        let _ = local_iter.next();
+
+        let storage_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
+
+        let iter = TwoMergeIterator::create(local_iter, storage_iter)?;
         Ok(TxnIterator {
             txn: self.clone(),
             iter,
@@ -104,15 +117,13 @@ impl StorageIterator for TxnLocalIterator {
 
 pub struct TxnIterator {
     txn: Arc<Transaction>,
-    // iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
-    iter: FusedIterator<LsmIterator>,
+    iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
 }
 
 impl TxnIterator {
     pub fn create(
         txn: Arc<Transaction>,
-        // iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
-        iter: FusedIterator<LsmIterator>,
+        iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
     ) -> Result<Self> {
         Ok(Self { txn, iter })
     }
@@ -137,7 +148,12 @@ impl StorageIterator for TxnIterator {
     }
 
     fn next(&mut self) -> Result<()> {
-        self.iter.next()
+        self.iter.next()?;
+        // skip deleted key
+        while self.iter.is_valid() && self.iter.value().is_empty() {
+            self.iter.next()?;
+        }
+        Ok(())
     }
 
     fn num_active_iterators(&self) -> usize {
