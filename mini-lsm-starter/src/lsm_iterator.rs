@@ -67,7 +67,6 @@ impl LsmIterator {
             while self.inner.is_valid() && self.prev_key == self.inner.key().key_ref() {
                 self.inner_next()?;
             }
-
             if !self.inner.is_valid() {
                 break;
             }
@@ -82,10 +81,14 @@ impl LsmIterator {
             {
                 self.inner_next()?;
             }
-
             // after call of self.inner_next(), self.inner may be invalid, so we should check once call self.inner_next()
             if !self.inner.is_valid() {
                 break;
+            }
+
+            // if seek to next different key, repeat the process
+            if self.prev_key != self.inner.key().key_ref() {
+                continue;
             }
 
             if !self.inner.value().is_empty() {

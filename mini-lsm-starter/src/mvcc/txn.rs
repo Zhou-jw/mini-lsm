@@ -33,6 +33,9 @@ impl Transaction {
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
         // first probe the local_sotrage
         if let Some(entry) = self.local_storage.get(key) {
+            if entry.value().is_empty() {
+                return Ok(None);
+            }
             return Ok(Some(entry.value().clone()));
         }
         self.inner.get_with_ts(key, self.read_ts)
@@ -83,7 +86,8 @@ impl Transaction {
                 }
             })
             .collect::<Vec<_>>();
-        Ok(())
+
+        self.inner.write_batch(&batch)
     }
 }
 
