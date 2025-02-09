@@ -4,7 +4,7 @@
 use std::{
     collections::HashSet,
     ops::Bound,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, atomic::Ordering, Arc},
 };
 
 use anyhow::Result;
@@ -16,7 +16,8 @@ use parking_lot::Mutex;
 use crate::{
     iterators::{two_merge_iterator::TwoMergeIterator, StorageIterator},
     lsm_iterator::{FusedIterator, LsmIterator},
-    lsm_storage::LsmStorageInner, mem_table::map_bound,
+    lsm_storage::{LsmStorageInner, WriteBatchRecord},
+    mem_table::map_bound,
 };
 
 pub struct Transaction {
@@ -42,7 +43,8 @@ impl Transaction {
             map: self.local_storage.clone(),
             iter_builder: |map| map.range((map_bound(lower), map_bound(upper))),
             item: (Bytes::new(), Bytes::new()),
-        }.build();
+        }
+        .build();
         let _ = local_iter.next();
 
         let storage_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
@@ -55,15 +57,33 @@ impl Transaction {
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) {
-        self.local_storage.insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
+        self.local_storage
+            .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
     }
 
     pub fn delete(&self, key: &[u8]) {
-        self.local_storage.insert(Bytes::copy_from_slice(key), Bytes::new());
+        self.local_storage
+            .insert(Bytes::copy_from_slice(key), Bytes::new());
     }
 
     pub fn commit(&self) -> Result<()> {
-        unimplemented!()
+        self.committed
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .expect("cannot operate on committed txn!");
+
+        // collect all key-value pairs from the local storage and submit a write batch to the storage engine
+        let batch = self
+            .local_storage
+            .iter()
+            .map(|entry| {
+                if entry.value().is_empty() {
+                    WriteBatchRecord::Del(entry.key().clone())
+                } else {
+                    WriteBatchRecord::Put(entry.key().clone(), entry.value().clone())
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(())
     }
 }
 
