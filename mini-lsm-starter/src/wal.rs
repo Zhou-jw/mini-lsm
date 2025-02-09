@@ -36,29 +36,28 @@ impl Wal {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
         let mut rbuf: &[u8] = buf.as_slice();
-        let mut pos = 0;
+        let mut batch_begin = SIZEOF_U32;
         while rbuf.has_remaining() {
-            let key_len = rbuf.get_u16() as usize;
-            let key = Bytes::copy_from_slice(&rbuf[..key_len]);
-            rbuf.advance(key_len);
-            let ts = rbuf.get_u64();
-            let key_bytes = KeyBytes::from_bytes_with_ts(key, ts);
-            let value_len = rbuf.get_u16() as usize;
-            let value = Bytes::copy_from_slice(&rbuf[..value_len]);
-            rbuf.advance(value_len);
-            // let mut hasher = crc32fast::Hasher::new();
-            // hasher.write_u16(key_len as u16);
-            // hasher.write(key.as_ref());
-            // hasher.write_u16(value_len as u16);
-            // hasher.write(value.as_ref());
-            // let checksum = hasher.finalize();
-            let end = pos + 2 * SIZEOF_U16 + key_len + SIZEOF_U64 + value_len;
-            let checksum = crc32fast::hash(&buf[pos..end]);
+            let batch_size = rbuf.get_u32();
+            let mut batch_end = batch_begin;
+            while batch_size > (batch_end - batch_begin) as u32 {
+                let key_len = rbuf.get_u16() as usize;
+                let key = Bytes::copy_from_slice(&rbuf[..key_len]);
+                rbuf.advance(key_len);
+                let ts = rbuf.get_u64();
+                let key_bytes = KeyBytes::from_bytes_with_ts(key, ts);
+                let value_len = rbuf.get_u16() as usize;
+                let value = Bytes::copy_from_slice(&rbuf[..value_len]);
+                rbuf.advance(value_len);
+                batch_end += 2 * SIZEOF_U16 + key_len + SIZEOF_U64 + value_len;
+
+                skiplist.insert(key_bytes, value);
+            }
+            let checksum = crc32fast::hash(&buf[batch_begin..batch_end]);
             if checksum != rbuf.get_u32() {
                 bail!("mismatched wal checksum!");
             }
-            pos = end + 4;
-            skiplist.insert(key_bytes, value);
+            batch_begin = batch_end + SIZEOF_U32*2 /* batch_size + checksum */;
         }
 
         Ok(Self {
@@ -98,8 +97,26 @@ impl Wal {
     }
 
     /// Implement this in week 3, day 5.
-    pub fn put_batch(&self, _data: &[(&[u8], &[u8])]) -> Result<()> {
-        unimplemented!()
+    /// |   HEADER   |                          BODY                                      |  FOOTER  |
+    /// |     u32    |   u16   | var | u64 |    u16    |  var  |           ...            |    u32   |
+    /// | batch_size | key_len | key | ts  | value_len | value | more key-value pairs ... | checksum |
+    pub fn put_batch(&self, data: &[(KeySlice, &[u8])]) -> Result<()> {
+        let mut buf = Vec::new();
+        for (key, value) in data {
+            buf.put_u16(key.key_len() as u16);
+            buf.put_slice(key.key_ref());
+            buf.put_u64(key.ts());
+            buf.put_u16(value.len() as u16);
+            buf.put_slice(value);
+        }
+        let mut file = self.file.lock();
+        // write Header
+        file.write_all(&(buf.len() as u32).to_be_bytes())?;
+        let chksum = crc32fast::hash(&buf);
+        buf.put_u32(chksum);
+        file.write_all(buf.as_slice())
+            .context("fail to write to WAL")?;
+        Ok(())
     }
 
     pub fn sync(&self) -> Result<()> {
