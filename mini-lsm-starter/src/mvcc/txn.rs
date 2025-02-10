@@ -31,6 +31,16 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
+        if self.committed.load(Ordering::SeqCst) {
+            panic!("cannot operate on committed txn!");
+        }
+
+        if self.key_hashes.is_some() {
+            let mut guard = self.key_hashes.as_ref().unwrap().lock();
+            let (_, read_set)  = & mut *guard;
+            read_set.insert(crc32fast::hash(key));
+        }
+
         // first probe the local_sotrage
         if let Some(entry) = self.local_storage.get(key) {
             if entry.value().is_empty() {
@@ -42,6 +52,10 @@ impl Transaction {
     }
 
     pub fn scan(self: &Arc<Self>, lower: Bound<&[u8]>, upper: Bound<&[u8]>) -> Result<TxnIterator> {
+        if self.committed.load(Ordering::SeqCst) {
+            panic!("cannot operate on committed txn!");
+        }
+
         let mut local_iter = TxnLocalIteratorBuilder {
             map: self.local_storage.clone(),
             iter_builder: |map| map.range((map_bound(lower), map_bound(upper))),
@@ -60,11 +74,17 @@ impl Transaction {
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) {
+        if self.committed.load(Ordering::SeqCst) {
+            panic!("cannot operate on committed txn!");
+        }
         self.local_storage
             .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
     }
 
     pub fn delete(&self, key: &[u8]) {
+        if self.committed.load(Ordering::SeqCst) {
+            panic!("cannot operate on committed txn!");
+        }
         self.local_storage
             .insert(Bytes::copy_from_slice(key), Bytes::new());
     }
