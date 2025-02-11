@@ -648,6 +648,7 @@ impl LsmStorageInner {
                     }
                 }
             }
+            new_txn.commit()?;
         }
         Ok(())
     }

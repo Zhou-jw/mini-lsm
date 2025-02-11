@@ -20,7 +20,7 @@ use crate::iterators::merge_iterator::MergeIterator;
 use crate::iterators::two_merge_iterator::TwoMergeIterator;
 use crate::iterators::StorageIterator;
 use crate::key::KeySlice;
-use crate::lsm_storage::{LsmStorageInner, LsmStorageState};
+use crate::lsm_storage::{CompactionFilter, LsmStorageInner, LsmStorageState};
 use crate::manifest::ManifestRecord;
 use crate::table::{SsTable, SsTableBuilder, SsTableIterator};
 
@@ -123,11 +123,12 @@ impl LsmStorageInner {
         let target_sst_size = self.options.target_sst_size;
         let block_size = self.options.block_size;
         let min_ts = self.mvcc().watermark();
+        let filters = self.compaction_filters.lock().clone();
 
         let mut sstables = Vec::new();
         let mut sst_builder = None;
         let mut prev_key = Vec::<u8>::new();
-        while iter.is_valid() {
+        'outer: while iter.is_valid() {
             if sst_builder.is_none() {
                 sst_builder = Some(SsTableBuilder::new(block_size));
             }
@@ -135,6 +136,24 @@ impl LsmStorageInner {
             let is_same_as_prevkey = prev_key == iter.key().key_ref();
             let builder_inner = sst_builder.as_mut().unwrap();
 
+            // compaction filter
+            // println!("min_ts: {:?}", min_ts);
+            if iter.key().ts() <= min_ts {
+                for prefix in filters.iter() {
+                    match prefix {
+                        CompactionFilter::Prefix(x) => {
+                            if iter.key().key_ref().starts_with(x) {
+                                prev_key.clear();
+                                prev_key.extend(iter.key().key_ref());
+                                iter.next()?;
+                                continue 'outer;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // skip repeated key and only keep keys with ts >= min_ts
             if is_same_as_prevkey && iter.key().ts() < min_ts {
                 // println!(
                 //     "prev_key: {:?}, iter.key(): {:?}, ts: {:?}, min_ts: {:?}",
@@ -147,6 +166,7 @@ impl LsmStorageInner {
                 continue;
             }
 
+            // remove deleted key
             if !is_same_as_prevkey && iter.key().ts() <= min_ts && iter.value().is_empty() {
                 // println!(
                 //     "delete key: {:?}, value: {:?}, ts: {:?}, min_ts: {:?}",
