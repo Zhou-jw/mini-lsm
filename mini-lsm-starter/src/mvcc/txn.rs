@@ -7,7 +7,7 @@ use std::{
     sync::{atomic::AtomicBool, atomic::Ordering, Arc},
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bytes::Bytes;
 use crossbeam_skiplist::SkipMap;
 use ouroboros::self_referencing;
@@ -19,6 +19,8 @@ use crate::{
     lsm_storage::{LsmStorageInner, WriteBatchRecord},
     mem_table::map_bound,
 };
+
+use super::CommittedTxnData;
 
 pub struct Transaction {
     pub(crate) read_ts: u64,
@@ -37,7 +39,7 @@ impl Transaction {
 
         if self.key_hashes.is_some() {
             let mut guard = self.key_hashes.as_ref().unwrap().lock();
-            let (_, read_set)  = & mut *guard;
+            let (_, read_set) = &mut *guard;
             read_set.insert(crc32fast::hash(key));
         }
 
@@ -90,6 +92,28 @@ impl Transaction {
     }
 
     pub fn commit(&self) -> Result<()> {
+        // serializable validation
+        let mut serializable_check = false;
+        let _commit_lock = self.inner.mvcc().commit_lock.lock();
+        let expected_commit_ts = self.inner.mvcc().latest_commit_ts() + 1;
+        if self.key_hashes.is_some() {
+            let guard = self.key_hashes.as_ref().unwrap().lock();
+            let (write_set, read_set) = &*guard;
+            if !write_set.is_empty() {
+                let committed_txns = self.inner.mvcc().committed_txns.lock();
+                for (_ts, txn_data) in committed_txns.iter() {
+                    let ts_overlap = self.read_ts < txn_data.commit_ts
+                        && txn_data.commit_ts < expected_commit_ts;
+                    // commit timestamp within range (read_ts, expected_commit_ts), and has jointset
+                    if ts_overlap && !read_set.is_disjoint(&txn_data.key_hashes) {
+                        bail!("Serializable Validation fail!");
+                    }
+                }
+            }
+            serializable_check = true;
+        }
+
+        // begin commit process
         self.committed
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .expect("cannot operate on committed txn!");
@@ -107,7 +131,22 @@ impl Transaction {
             })
             .collect::<Vec<_>>();
 
-        self.inner.write_batch(&batch)
+        let ts = self.inner.write_batch_inner(&batch)?;
+        if serializable_check {
+            let mut guard = self.key_hashes.as_ref().unwrap().lock();
+            let (write_set, read_set) = &mut *guard;
+            let mut committed_txns = self.inner.mvcc().committed_txns.lock();
+            let old_tnx_data = committed_txns.insert(
+                ts,
+                CommittedTxnData {
+                    commit_ts: ts,
+                    key_hashes: std::mem::take(write_set),
+                    read_ts: self.read_ts,
+                },
+            );
+            assert!(old_tnx_data.is_none());
+        }
+        Ok(())
     }
 }
 

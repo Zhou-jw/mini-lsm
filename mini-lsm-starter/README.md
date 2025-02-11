@@ -109,3 +109,15 @@ fn main() {
 ```
 https://rustwiki.org/zh-CN/book/appendix-03-derivable-traits.html
 ```
+
+## week3 day6
+### Task 3: Engine Interface and Serializable Validation
+1. serializable validation
+go through committed txn in range (read_ts, expected_commit_ts)
+
+if read_set overlaps with write_set of those txns, validation fails
+
+if validation succeeds, commit the write_batch, insert write_set into `self.inner.mvcc().committed_txns`
+
+
+
