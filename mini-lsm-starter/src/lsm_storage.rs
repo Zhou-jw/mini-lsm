@@ -625,15 +625,18 @@ impl LsmStorageInner {
             }
         }
         self.mvcc().update_commit_ts(ts);
+        println!("ts: {:?} committed", ts);
         Ok(ts)
     }
 
     /// Write a batch of data into the storage. Implement in week 2 day 7.
-    pub fn write_batch<T: AsRef<[u8]>>(self: &Arc<Self>, batch: &[WriteBatchRecord<T>]) -> Result<()> {
+    pub fn write_batch<T: AsRef<[u8]>>(
+        self: &Arc<Self>,
+        batch: &[WriteBatchRecord<T>],
+    ) -> Result<()> {
         if !self.options.serializable {
             self.write_batch_inner(batch)?;
-        }
-        else {
+        } else {
             let new_txn = self.mvcc().new_txn(self.clone(), self.options.serializable);
             for record in batch {
                 match record {
@@ -653,8 +656,7 @@ impl LsmStorageInner {
     pub fn put(self: &Arc<Self>, key: &[u8], value: &[u8]) -> Result<()> {
         if !self.options.serializable {
             self.write_batch_inner(&[WriteBatchRecord::Put(key, value)])?;
-        }
-        else {
+        } else {
             let new_txn = self.mvcc().new_txn(self.clone(), self.options.serializable);
             new_txn.put(key, value);
             new_txn.commit()?;
@@ -664,10 +666,9 @@ impl LsmStorageInner {
 
     /// Remove a key from the storage by writing an empty value.
     pub fn delete(self: &Arc<Self>, key: &[u8]) -> Result<()> {
-         if !self.options.serializable {
+        if !self.options.serializable {
             self.write_batch_inner(&[WriteBatchRecord::Del(key)])?;
-        }
-        else {
+        } else {
             let new_txn = self.mvcc().new_txn(self.clone(), self.options.serializable);
             new_txn.delete(key);
             new_txn.commit()?;

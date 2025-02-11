@@ -69,15 +69,17 @@ impl Transaction {
         let storage_iter = self.inner.scan_with_ts(lower, upper, self.read_ts)?;
 
         let iter = TwoMergeIterator::create(local_iter, storage_iter)?;
-        Ok(TxnIterator {
-            txn: self.clone(),
-            iter,
-        })
+        TxnIterator::create(self.clone(), iter)
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) {
         if self.committed.load(Ordering::SeqCst) {
             panic!("cannot operate on committed txn!");
+        }
+        if self.key_hashes.is_some() {
+            let mut guard = self.key_hashes.as_ref().unwrap().lock();
+            let (write_set, _) = &mut *guard;
+            write_set.insert(crc32fast::hash(key));
         }
         self.local_storage
             .insert(Bytes::copy_from_slice(key), Bytes::copy_from_slice(value));
@@ -86,6 +88,11 @@ impl Transaction {
     pub fn delete(&self, key: &[u8]) {
         if self.committed.load(Ordering::SeqCst) {
             panic!("cannot operate on committed txn!");
+        }
+        if self.key_hashes.is_some() {
+            let mut guard = self.key_hashes.as_ref().unwrap().lock();
+            let (write_set, _) = &mut *guard;
+            write_set.insert(crc32fast::hash(key));
         }
         self.local_storage
             .insert(Bytes::copy_from_slice(key), Bytes::new());
@@ -99,6 +106,7 @@ impl Transaction {
         if self.key_hashes.is_some() {
             let guard = self.key_hashes.as_ref().unwrap().lock();
             let (write_set, read_set) = &*guard;
+            // println!("write_set: {:?}, read_set: {:?}", write_set, read_set);
             if !write_set.is_empty() {
                 let committed_txns = self.inner.mvcc().committed_txns.lock();
                 for (_ts, txn_data) in committed_txns.iter() {
@@ -145,6 +153,9 @@ impl Transaction {
                 },
             );
             assert!(old_tnx_data.is_none());
+            // Garbage Collection
+            let min_ts = self.inner.mvcc().watermark();
+            *committed_txns = committed_txns.split_off(&min_ts);
         }
         Ok(())
     }
@@ -208,7 +219,20 @@ impl TxnIterator {
         txn: Arc<Transaction>,
         iter: TwoMergeIterator<TxnLocalIterator, FusedIterator<LsmIterator>>,
     ) -> Result<Self> {
-        Ok(Self { txn, iter })
+        let txn_iter = Self { txn, iter };
+        if txn_iter.is_valid() {
+            txn_iter.add_to_read_set(txn_iter.key());
+        }
+        Ok(txn_iter)
+    }
+
+    pub fn add_to_read_set(&self, key: &[u8]) {
+        if self.txn.inner.options.serializable {
+            let mut guard = self.txn.key_hashes.as_ref().unwrap().lock();
+            let (_, read_set) = &mut *guard;
+            read_set.insert(crc32fast::hash(key));
+            println!("key: {:?} add to read_set", key);
+        }
     }
 }
 
@@ -235,6 +259,10 @@ impl StorageIterator for TxnIterator {
         // skip deleted key
         while self.iter.is_valid() && self.iter.value().is_empty() {
             self.iter.next()?;
+        }
+        // add key to read_set
+        if self.is_valid() {
+            self.add_to_read_set(self.iter.key());
         }
         Ok(())
     }
