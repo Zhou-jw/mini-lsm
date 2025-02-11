@@ -163,6 +163,7 @@ impl Transaction {
 
 impl Drop for Transaction {
     fn drop(&mut self) {
+        // println!("remove read_ts: {:?}", self.read_ts);
         self.inner.mvcc().ts.lock().1.remove_reader(self.read_ts);
     }
 }
